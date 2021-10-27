@@ -76,7 +76,6 @@ class SimpleSeqTagModel(Model):
         batch_size, seq_len, _ = words.shape
         # [batch_size, seq_len, n_hidden]
         x = self.encode(words, feats)
-
         if(self.syntax):
             if(sens_lst == None):
                 raise Exception("Sents_lst is invaild!", sens_lst)

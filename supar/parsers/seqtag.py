@@ -127,7 +127,7 @@ class SimpleSeqTagParser(Parser):
         bar, metric = progress_bar(loader), SeqTagMetric(self.LABEL.vocab)
 
         for i, batch in enumerate(bar, 1):
-            sentences_lst = [''.join(s.words) for s in batch.sentences]
+            sentences_lst = [s.words for s in batch.sentences]
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
@@ -158,7 +158,7 @@ class SimpleSeqTagParser(Parser):
         total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
 
         for batch in loader:
-            sentences_lst = [''.join(s.words) for s in batch.sentences]
+            sentences_lst = [s.words for s in batch.sentences]
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
@@ -412,7 +412,7 @@ class CrfSeqTagParser(Parser):
         bar, metric = progress_bar(loader), SeqTagMetric(self.LABEL.vocab)
 
         for i, batch in enumerate(bar, 1):
-            sentences_lst = [''.join(s.words) for s in batch.sentences]
+            sentences_lst = [s.words for s in batch.sentences]
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
@@ -444,7 +444,7 @@ class CrfSeqTagParser(Parser):
 
         # for words, *feats, labels in loader:
         for batch in loader:
-            sentences_lst = [''.join(s.words) for s in batch.sentences]
+            sentences_lst = [s.words for s in batch.sentences]
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
