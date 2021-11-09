@@ -47,7 +47,7 @@ def main():
     subparser.add_argument('--data', default='data/sdp/DM/test.conllu', help='path to dataset')
     subparser.add_argument('--pred', default='pred.conllu', help='path to predicted result')
     subparser.add_argument('--prob', action='store_true', help='whether to output probs')
-    subparser.add_argument('--task', choices=['05', '09', '12'], required=True, help='which dataset')
+    subparser.add_argument('--task', default='05', choices=['05', '09', '12'], help='which dataset')
     subparser.add_argument('--gold',
                            default='data/conll05-original-style/sc-wsj.final')
     subparser.add_argument('--vtb',

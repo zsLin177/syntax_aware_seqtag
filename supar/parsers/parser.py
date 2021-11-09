@@ -325,12 +325,12 @@ class Parser(object):
             self.transform.save(pred, dataset.sentences)
         logger.info(f"{elapsed}s elapsed, {len(dataset) / elapsed.total_seconds():.2f} Sents/s")
 
-        if(args.task in ('05', '12')):
-            rand_file_seed1 = random.randint(1,100)
-            rand_file_seed2 = random.randint(1,100)
-            test_conll_f1, test_lisa_f1 = 0, 0
-            conll_recall, conll_precision, test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2), args.task)
-            logger.info(f"-P:{conll_precision:6.4} R:{conll_recall:6.4} F1:{test_conll_f1:6.4}")
+        # if(args.task in ('05', '12')):
+        #     rand_file_seed1 = random.randint(1,100)
+        #     rand_file_seed2 = random.randint(1,100)
+        #     test_conll_f1, test_lisa_f1 = 0, 0
+        #     conll_recall, conll_precision, test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2), args.task)
+        #     logger.info(f"-P:{conll_precision:6.4} R:{conll_recall:6.4} F1:{test_conll_f1:6.4}")
 
         return dataset
 

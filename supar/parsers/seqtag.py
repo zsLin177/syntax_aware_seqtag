@@ -170,6 +170,30 @@ class SimpleSeqTagParser(Parser):
 
         return metric
 
+    @torch.no_grad()
+    def _predict(self, loader):
+        self.model.eval()
+
+        total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
+        preds = {'labels': [], 'probs': [] if self.args.prob else None}
+        # for words, *feats, labels in loader:
+        for batch in loader:
+            # pdb.set_trace()
+            sentences_lst = [s.words for s in batch.sentences]
+            words, *feats, labels = batch
+            word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            score = self.model(words, sentences_lst, feats)
+            output = self.model.decode(score)[:, 1:]
+            mask = mask[:, 1:]
+            metric(output.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
+            lens = mask.sum(-1).tolist()
+            preds['labels'].extend(out[0:i].tolist() for i, out in zip(lens, output))
+        preds['labels'] = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None] for i in out]) for out in preds['labels']]
+        # total_loss /= len(loader)
+        print(metric)
+        return preds
+
     @classmethod
     def build(cls, path, min_freq=3, fix_len=20, **kwargs):
         r"""
@@ -455,6 +479,30 @@ class CrfSeqTagParser(Parser):
         # total_loss /= len(loader)
 
         return metric
+
+    @torch.no_grad()
+    def _predict(self, loader):
+        self.model.eval()
+
+        total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
+        preds = {'labels': [], 'probs': [] if self.args.prob else None}
+        # for words, *feats, labels in loader:
+        for batch in loader:
+            # pdb.set_trace()
+            sentences_lst = [s.words for s in batch.sentences]
+            words, *feats, labels = batch
+            word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            score = self.model(words, sentences_lst, feats)
+            output = self.model.decode(score, mask)
+            mask = mask[:, 1:]
+            metric(output.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
+            lens = mask.sum(-1).tolist()
+            preds['labels'].extend(out[0:i].tolist() for i, out in zip(lens, output))
+        preds['labels'] = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None] for i in out]) for out in preds['labels']]
+        # total_loss /= len(loader)
+        print(metric)
+        return preds
 
     @classmethod
     def build(cls, path, min_freq=3, fix_len=20, **kwargs):
