@@ -141,7 +141,6 @@ class SimpleSeqTagParser(Parser):
                 self.scheduler.step()
                 self.optimizer.zero_grad()
             
-            self.model.eval()
             preds = self.model.decode(score)[:, 1:]
             mask = mask[:, 1:]
             metric(preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
