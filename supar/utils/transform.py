@@ -429,7 +429,7 @@ class CoNLL(Transform):
         for i, row in enumerate(chart):
             pairs = [(j, label) for j, label in enumerate(row) if label is not None]
             if len(pairs) > 0:
-                sequence[i] = '|'.join(f"{head}:{label}" for head, label in pairs)
+                sequence[i] = '|'.join(f"{label}" for head, label in pairs)
         return sequence
 
     @classmethod

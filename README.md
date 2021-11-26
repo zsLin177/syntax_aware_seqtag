@@ -11,69 +11,59 @@
 
 ## Environment
     python3
-    torch >= 1.4
-    transformers == 3.1.0
+    torch == 1.10
+    transformers == 4.5.1
 
 ## Training 
 * Train a simple seqtag model (without CRF)
 ```shell
 python -m supar.cmds.seqtag train -b \
-        --train data/aishell_alllabel/train.conllu \
-        --dev data/aishell_alllabel/dev.conllu \
-        --test data/aishell_alllabel/test.conllu \
-        --batch-size 1000 \
-        --encoder bert \
-        --lr_rate 10 \
-        --bert ./bert-base-chinese \
-        --use_syntax \
-        --mix \
-        --synatax_path parser/save/joint-ctb7/ctb7.joint.bert/ \
-        -p exp/simple-rhythm-mix-syntax/model \
+        --train data/ptb/ptb/train.conllx \
+        --dev data/ptb/ptb/dev.conllx \
+        --test data/ptb/ptb/test.conllx \
+        --batch-size 3000 \
+        --encoder transformer \
+        --embed data/glove.6B.300d.txt \
+        --feat char \
+        -p exp/transformer-simple-pos/model \
         -d 4
 ```
---bert: the name or the path
-
---lr_rate: the inital learning rate of parameters outside bert equals to lr_rate * 5e-5 
-
 -d: use which gpu
 
 * Train a crf seqtag model
 ```shell
 python -m supar.cmds.crf_seqtag train -b \
-        --train data/aishell_alllabel/train.conllu \
-        --dev data/aishell_alllabel/dev.conllu \
-        --test data/aishell_alllabel/test.conllu \
-        --batch-size 1000 \
-        --encoder bert \
-        --lr_rate 10 \
-        --bert ./bert-base-chinese \
-        --use_syntax \
-        --mix \
-        --synatax_path parser/save/joint-ctb7/ctb7.joint.bert/ \
-        -p exp/tmp-crf-rhythm-mix-syntax/model \
-        -d 3
+        --train data/ptb/ptb/train.conllx \
+        --dev data/ptb/ptb/dev.conllx \
+        --test data/ptb/ptb/test.conllx \
+        --batch-size 3000 \
+        --encoder transformer \
+        --embed data/glove.6B.300d.txt \
+        --feat char \
+        -p exp/transformer-crf-pos/model \
+        -d 4
 ```
 
 ## Evaluate
 ```shell
-python -m supar.cmds.crf_seqtag evaluate --data data/aishell_alllabel/test.conllu \
-        -p exp/crf-rhythm-mix-syntax/model \
-        -d 3
+python -m supar.cmds.seqtag evaluate --data data/ptb/ptb/test.conllx \
+        -p exp/transformer-simple-pos/model \
+        -d 4
 
-python -m supar.cmds.seqtag evaluate --data data/aishell_alllabel/test.conllu \
-        -p exp/simple-rhythm-mix-syntax/model \
-        -d 3
+python -m supar.cmds.crf_seqtag evaluate --data data/ptb/ptb/test.conllx \
+        -p exp/transformer-crf-pos/model \
+        -d 5
 ```
 
 ## Predict
 ```shell
-python -m supar.cmds.seqtag predict --data data/aishell_alllabel/test.conllu \
-        --pred alllabel_test.pred \
-        -p exp/simple-rhythm-mix-syntax/model \
-        -d 3
-python -m supar.cmds.crf_seqtag predict --data data/aishell_alllabel/test.conllu \
-        --pred alllabel_test.pred \
-        -p exp/crf-rhythm-mix-syntax/model \
-        -d 3
+python -m supar.cmds.seqtag predict --data data/ptb/ptb/test.conllx \
+        --pred test.pred \
+        -p exp/transformer-simple-pos/model \
+        -d 4
+python -m supar.cmds.crf_seqtag predict --data data/ptb/ptb/test.conllx \
+        --pred test.pred \
+        -p exp/transformer-crf-pos/model \
+        -d 4
 ```
 
