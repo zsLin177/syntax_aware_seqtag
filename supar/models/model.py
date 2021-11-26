@@ -6,7 +6,7 @@ from supar.modules import (CharLSTM, IndependentDropout, SharedDropout,
                            TransformerEmbedding, VariationalLSTM, SelfAttentionEncoder)
 from supar.utils import Config
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-
+import pdb
 
 class Model(nn.Module):
 
@@ -41,8 +41,8 @@ class Model(nn.Module):
         if self.args.encoder != 'bert':
             self.word_embed = nn.Embedding(num_embeddings=self.args.n_words,
                                            embedding_dim=self.args.n_embed)
-            self.embed_proj = nn.Linear(n_pretrained_embed, n_embed_proj)
-            self.args.n_input = self.args.n_embed + n_embed_proj
+            self.embed_proj = nn.Linear(n_pretrained_embed, n_pretrained_embed+12)
+            self.args.n_input = self.args.n_embed + n_pretrained_embed + 12
             if 'tag' in self.args.feat:
                 self.tag_embed = nn.Embedding(num_embeddings=self.args.n_tags,
                                               embedding_dim=self.args.n_feat_embed)
@@ -78,7 +78,9 @@ class Model(nn.Module):
             self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.args.n_lstm_hidden * 2
         elif self.args.encoder == 'transformer':
-            self.encoder = SelfAttentionEncoder(num_encoder_layers=6, emb_size=self.args.n_input, dim_feedforward=1024)
+            self.encoder = SelfAttentionEncoder(num_encoder_layers=3, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True)
+            self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
+            self.args.n_hidden = self.args.n_input
         elif self.args.encoder == 'bert':
             self.encoder = TransformerEmbedding(model=self.args.bert,
                                                 n_layers=self.args.n_bert_layers,
@@ -137,7 +139,6 @@ class Model(nn.Module):
             embed = self.embed(words, feats)
             mask = words.ne(self.args.pad_index)
             x = self.encoder(embed, ~mask)
-            return x
         else:
             x = self.encoder(words)
         return self.encoder_dropout(x)

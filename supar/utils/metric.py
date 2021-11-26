@@ -344,7 +344,7 @@ class SeqTagMetric(Metric):
             r = self.label_tp_lst[i] / (self.label_gd_lst[i] + self.eps)
             f = 2*self.label_tp_lst[i] / (self.label_pd_lst[i] + self.eps + self.label_gd_lst[i])
             s += f"{label}: P:{p:6.2%} R:{r:6.2%} F:{f:6.2%} "
-        return f"{s} Accuracy: {self.accuracy:6.2%}"
+        return f"Accuracy: {self.accuracy:6.2%}"
 
     @property
     def score(self):

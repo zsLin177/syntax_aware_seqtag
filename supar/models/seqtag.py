@@ -12,7 +12,7 @@ from supar.structs import CRFLinearChain
 from supar.modules.scalar_mix import ScalarMix
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from parser.JParser import JParser
+# from parser.JParser import JParser
 
 class SimpleSeqTagModel(Model):
     r"""
@@ -62,29 +62,14 @@ class SimpleSeqTagModel(Model):
         self.syntax = syntax
         self.n_synatax = n_syntax
         self.mix = mix
-        if(syntax):
-            self.synatax_model = JParser.load(synatax_path)
-            self.repr_mlp = MLP(n_in=self.args.n_hidden+n_syntax, n_out=n_mlp, dropout=repr_mlp_dropout)
-            if(mix):
-                self.scalar_mix = ScalarMix(3, mix_dropout)
-        else:
-            self.repr_mlp = MLP(n_in=self.args.n_hidden, n_out=n_mlp, dropout=repr_mlp_dropout)
+        
+        self.repr_mlp = MLP(n_in=self.args.n_hidden, n_out=n_mlp, dropout=repr_mlp_dropout)
         self.scorer = MLP(n_in=n_mlp, n_out=n_labels, activation=False)
         self.ce_criterion = nn.CrossEntropyLoss()
 
     def forward(self, words, sens_lst=None, feats=None):
-        batch_size, seq_len, _ = words.shape
         # [batch_size, seq_len, n_hidden]
         x = self.encode(words, feats)
-        if(self.syntax):
-            if(sens_lst == None):
-                raise Exception("Sents_lst is invaild!", sens_lst)
-            last_layer_info, each_layer_out = self.synatax_model.api(sens_lst)
-            if(self.mix):
-                syntax_info = self.scalar_mix(each_layer_out)
-                x = torch.cat((x, syntax_info[:, :seq_len]), -1)
-            else:
-                x = torch.cat((x, last_layer_info[:, :seq_len]), -1)
         # [batch_size, seq_len, n_labels]
         score = self.scorer(self.repr_mlp(x))
         return score
@@ -150,31 +135,17 @@ class CrfSeqTagModel(Model):
         self.syntax = syntax
         self.n_synatax = n_syntax
         self.mix = mix
-        if(syntax):
-            self.synatax_model = JParser.load(synatax_path)
-            self.repr_mlp = MLP(n_in=self.args.n_hidden+n_syntax, n_out=n_mlp, dropout=repr_mlp_dropout)
-            if(mix):
-                self.scalar_mix = ScalarMix(3, mix_dropout)
-        else:
-            self.repr_mlp = MLP(n_in=self.args.n_hidden, n_out=n_mlp, dropout=repr_mlp_dropout)
+        
+        self.repr_mlp = MLP(n_in=self.args.n_hidden, n_out=n_mlp, dropout=repr_mlp_dropout)
         self.scorer = MLP(n_in=n_mlp, n_out=n_labels, activation=False)
         self.trans = nn.Parameter(torch.zeros(n_labels+1, n_labels+1))
         self.ce_criterion = nn.CrossEntropyLoss()
 
     def forward(self, words, sens_lst=None, feats=None):
-        batch_size, seq_len, _ = words.shape
+        # batch_size, seq_len, _ = words.shape
         # [batch_size, seq_len, n_hidden]
         x = self.encode(words, feats)
 
-        if(self.syntax):
-            if(sens_lst == None):
-                raise Exception("Sents_lst is invaild!", sens_lst)
-            last_layer_info, each_layer_out = self.synatax_model.api(sens_lst)
-            if(self.mix):
-                syntax_info = self.scalar_mix(each_layer_out)
-                x = torch.cat((x, syntax_info[:, :seq_len]), -1)
-            else:
-                x = torch.cat((x, last_layer_info[:, :seq_len]), -1)
         # [batch_size, seq_len, n_labels]
         score = self.scorer(self.repr_mlp(x))
         return score

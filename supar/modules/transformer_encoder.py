@@ -56,7 +56,7 @@ class SelfAttentionEncoder(nn.Module):
     def forward(self, src, pad_mask):
         '''
         src: [batch_size, seq_len, dim]
-        pad_mask: [batch_size, seq_len] for pad
+        pad_mask: [batch_size, seq_len] for pad, true means need to be pad
         '''
         if(self.position_embed):
             src_emb = self.positional_encoding(src)

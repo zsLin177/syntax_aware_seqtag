@@ -24,18 +24,7 @@ def main():
     subparser.add_argument('--unk', default='unk', help='unk token in pretrained embeddings')
     subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
-    subparser.add_argument('--inference', default='mfvi', choices=['mfvi', 'lbp'], help='approximate inference methods')
     subparser.add_argument('--lr_rate', default=1, type=int)
-    subparser.add_argument('--split',
-                           action='store_true',
-                           help='whether to use different mlp for predicate and arg')
-    subparser.add_argument('--use_syntax',
-                           action='store_true',
-                           help='whether to use syntax to help seqtag')
-    subparser.add_argument('--mix',
-                           action='store_true',
-                           help='whether to use mixed syntax info to help seqtag')
-    subparser.add_argument('--synatax_path', default='JointParser/parser/save/joint-ctb7/ctb7.joint.bigram/', help='path of used syntax model')
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')

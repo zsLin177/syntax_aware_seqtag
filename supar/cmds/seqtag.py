@@ -14,7 +14,7 @@ def main():
     subparser = subparsers.add_parser('train', help='Train a parser.')
     subparser.add_argument('--feat', '-f', choices=['tag', 'char', 'lemma', 'bert'], nargs='+', help='features to use')
     subparser.add_argument('--build', '-b', action='store_true', help='whether to build the model first')
-    subparser.add_argument('--encoder', choices=['lstm', 'bert'], default='lstm', help='encoder to use')
+    subparser.add_argument('--encoder', choices=['lstm', 'bert', 'transformer'], default='lstm', help='encoder to use')
     subparser.add_argument('--max-len', type=int, help='max length of the sentences')
     subparser.add_argument('--buckets', default=32, type=int, help='max num of buckets to use')
     subparser.add_argument('--train', default='data/sdp/DM/train.conllu', help='path to train file')
@@ -23,20 +23,9 @@ def main():
     subparser.add_argument('--embed', default='data/glove.6B.100d.txt', help='path to pretrained embeddings')
     subparser.add_argument('--unk', default='unk', help='unk token in pretrained embeddings')
     subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
-    subparser.add_argument('--n-embed-proj', default=125, type=int, help='dimension of projected embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
-    subparser.add_argument('--inference', default='mfvi', choices=['mfvi', 'lbp'], help='approximate inference methods')
     subparser.add_argument('--lr_rate', default=1, type=int)
-    subparser.add_argument('--split',
-                           action='store_true',
-                           help='whether to use different mlp for predicate and arg')
-    subparser.add_argument('--use_syntax',
-                           action='store_true',
-                           help='whether to use syntax to help seqtag')
-    subparser.add_argument('--mix',
-                           action='store_true',
-                           help='whether to use mixed syntax info to help seqtag')
-    subparser.add_argument('--synatax_path', default='JointParser/parser/save/joint-ctb7/ctb7.joint.bigram/', help='path of used syntax model')
+    
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')

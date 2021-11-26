@@ -31,8 +31,8 @@ class SimpleSeqTagParser(Parser):
 
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
-        self.TAG = self.transform.POS
-        self.LABEL = self.transform.PHEAD
+        self.LABEL = self.transform.POS
+        
 
     def train(self,
               train,
@@ -223,7 +223,7 @@ class SimpleSeqTagParser(Parser):
         logger.info("Building the fields")
         
         TAG, CHAR, LEMMA, BERT = None, None, None, None
-        if args.encoder != 'lstm':
+        if args.encoder == 'bert':
             from transformers import (AutoTokenizer, GPT2Tokenizer,
                                       GPT2TokenizerFast)
             t = AutoTokenizer.from_pretrained(args.bert)
@@ -238,7 +238,7 @@ class SimpleSeqTagParser(Parser):
                 else lambda x: ' ' + x)
             WORD.vocab = t.get_vocab()
         else:
-            WORD = Field('words', pad=pad, unk=unk, bos=bos, eos=eos, lower=True)
+            WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
             if 'tag' in args.feat:
                 TAG = Field('tags', bos=bos)
             if 'char' in args.feat:
@@ -269,11 +269,10 @@ class SimpleSeqTagParser(Parser):
         LABEL = Field('labels')
         transform = CoNLL(FORM=(WORD, CHAR, BERT),
                           LEMMA=LEMMA,
-                          POS=TAG,
-                          PHEAD=LABEL)
+                          POS=LABEL)
 
         train = Dataset(transform, args.train)
-        if args.encoder == 'lstm':
+        if args.encoder != 'bert':
             WORD.build(
                 train, args.min_freq,
                 (Embedding.load(args.embed, args.unk) if args.embed else None))
@@ -287,7 +286,7 @@ class SimpleSeqTagParser(Parser):
         LABEL.build(train)
         args.update({
             'n_words':
-            len(WORD.vocab) if args.encoder != 'lstm' else WORD.vocab.n_init,
+            len(WORD.vocab) if args.encoder == 'bert' else WORD.vocab.n_init,
             'n_labels':
             len(LABEL.vocab),
             'n_tags':
@@ -306,17 +305,30 @@ class SimpleSeqTagParser(Parser):
             WORD.bos_index,
             'unk_index':
             WORD.unk_index,
+            'interpolation': args.itp
+        })
+
+        if(args.encoder == 'bert'):
+            args.update({
             'lr':
             5e-5,
             'epochs': 20, 
             'warmup':
-            0.1,
-            'interpolation': args.itp,
-            'split': args.split,
-            'syntax': args.use_syntax,
-            'synatax_path': args.synatax_path,
-            'mix': args.mix
+            0.1
         })
+        else:
+            args.update({
+            'lr':
+            1e-3,
+            'epochs': 5000, 
+            'mu': .0,
+            'nu': .95,
+            'eps': 1e-12,
+            'weight_decay': 3e-9,
+            'decay': .75,
+            'decay_steps': 5000
+        })
+
         logger.info(f"{transform}")
 
         logger.info("Building the model")
@@ -339,8 +351,7 @@ class CrfSeqTagParser(Parser):
 
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
-        self.TAG = self.transform.POS
-        self.LABEL = self.transform.PHEAD
+        self.LABEL = self.transform.POS
 
     def train(self,
               train,
@@ -449,7 +460,6 @@ class CrfSeqTagParser(Parser):
                 self.scheduler.step()
                 self.optimizer.zero_grad()
             
-            self.model.eval()
             preds = self.model.decode(score, mask)
             mask = mask[:, 1:]
             metric(preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
@@ -579,8 +589,7 @@ class CrfSeqTagParser(Parser):
         LABEL = Field('labels')
         transform = CoNLL(FORM=(WORD, CHAR, BERT),
                           LEMMA=LEMMA,
-                          POS=TAG,
-                          PHEAD=LABEL)
+                          POS=LABEL)
 
         train = Dataset(transform, args.train)
         if args.encoder != 'bert':
@@ -596,7 +605,7 @@ class CrfSeqTagParser(Parser):
         LABEL.build(train)
         args.update({
             'n_words':
-            len(WORD.vocab) if args.encoder != 'lstm' else WORD.vocab.n_init,
+            len(WORD.vocab) if args.encoder == 'bert' else WORD.vocab.n_init,
             'n_labels':
             len(LABEL.vocab),
             'n_tags':
@@ -615,11 +624,7 @@ class CrfSeqTagParser(Parser):
             WORD.bos_index,
             'unk_index':
             WORD.unk_index,
-            'interpolation': args.itp,
-            'split': args.split,
-            'syntax': args.use_syntax,
-            'synatax_path': args.synatax_path,
-            'mix': args.mix
+            'interpolation': args.itp
         })
 
         if(args.encoder == 'bert'):
