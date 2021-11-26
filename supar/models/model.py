@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from supar.modules import (CharLSTM, IndependentDropout, SharedDropout,
-                           TransformerEmbedding, VariationalLSTM)
+                           TransformerEmbedding, VariationalLSTM, SelfAttentionEncoder)
 from supar.utils import Config
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
@@ -17,7 +17,8 @@ class Model(nn.Module):
                  n_lemmas=None,
                  feat=['char'],
                  n_embed=100,
-                 n_pretrained=100,
+                 n_embed_proj=100,
+                 n_pretrained_embed=300,
                  n_feat_embed=100,
                  n_char_embed=50,
                  n_char_hidden=100,
@@ -40,10 +41,8 @@ class Model(nn.Module):
         if self.args.encoder != 'bert':
             self.word_embed = nn.Embedding(num_embeddings=self.args.n_words,
                                            embedding_dim=self.args.n_embed)
-
-            self.args.n_input = self.args.n_embed
-            if self.args.n_pretrained != self.args.n_embed:
-                self.args.n_input += self.args.n_pretrained
+            self.embed_proj = nn.Linear(n_pretrained_embed, n_embed_proj)
+            self.args.n_input = self.args.n_embed + n_embed_proj
             if 'tag' in self.args.feat:
                 self.tag_embed = nn.Embedding(num_embeddings=self.args.n_tags,
                                               embedding_dim=self.args.n_feat_embed)
@@ -78,7 +77,9 @@ class Model(nn.Module):
                                            dropout=self.args.encoder_dropout)
             self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.args.n_lstm_hidden * 2
-        else:
+        elif self.args.encoder == 'transformer':
+            self.encoder = SelfAttentionEncoder(num_encoder_layers=6, emb_size=self.args.n_input, dim_feedforward=1024)
+        elif self.args.encoder == 'bert':
             self.encoder = TransformerEmbedding(model=self.args.bert,
                                                 n_layers=self.args.n_bert_layers,
                                                 pooling=bert_pooling,
@@ -91,9 +92,6 @@ class Model(nn.Module):
     def load_pretrained(self, embed=None):
         if embed is not None:
             self.pretrained = nn.Embedding.from_pretrained(embed.to(self.args.device))
-            if embed.shape[1] != self.args.n_pretrained:
-                self.embed_proj = nn.Linear(embed.shape[1], self.args.n_pretrained).to(self.args.device)
-            nn.init.zeros_(self.word_embed.weight)
         return self
 
     def forward(self):
@@ -112,11 +110,8 @@ class Model(nn.Module):
         # get outputs from embedding layers
         word_embed = self.word_embed(ext_words)
         if hasattr(self, 'pretrained'):
-            pretrained = self.pretrained(words)
-            if self.args.n_embed == self.args.n_pretrained:
-                word_embed += pretrained
-            else:
-                word_embed = torch.cat((word_embed, self.embed_proj(pretrained)), -1)
+            word_embed = torch.cat(
+                (word_embed, self.embed_proj(self.pretrained(words))), -1)
 
         feat_embeds = []
         if 'tag' in self.args.feat:
@@ -138,6 +133,11 @@ class Model(nn.Module):
             x = pack_padded_sequence(self.embed(words, feats), words.ne(self.args.pad_index).sum(1).tolist(), True, False)
             x, _ = self.encoder(x)
             x, _ = pad_packed_sequence(x, True, total_length=words.shape[1])
+        elif self.args.encoder == 'transformer':
+            embed = self.embed(words, feats)
+            mask = words.ne(self.args.pad_index)
+            x = self.encoder(embed, ~mask)
+            return x
         else:
             x = self.encoder(words)
         return self.encoder_dropout(x)
