@@ -30,7 +30,7 @@ class Model(nn.Module):
                  bert_pooling='mean',
                  bert_pad_index=0,
                  embed_dropout=.33,
-                 n_lstm_hidden=400,
+                 n_lstm_hidden=300,
                  n_lstm_layers=3,
                  encoder_dropout=.33,
                  **kwargs):
