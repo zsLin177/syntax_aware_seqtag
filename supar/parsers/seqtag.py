@@ -449,7 +449,6 @@ class CrfSeqTagParser(Parser):
                 self.scheduler.step()
                 self.optimizer.zero_grad()
             
-            self.model.eval()
             preds = self.model.decode(score, mask)
             mask = mask[:, 1:]
             metric(preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
