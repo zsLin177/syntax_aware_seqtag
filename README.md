@@ -1,14 +1,5 @@
 # Syntax Aware Seqtag
 
-## Pre-process
-
-* use preprocess.py to produce data in form of conllu
-    source file "data.txt.char.train.ner"
-    target file "train.conllu"
-    ```shell
-    python preprocess.py --src data.txt.char.train.ner --tgt train.conllu
-    ```
-
 ## Environment
     python3
     torch == 1.10
