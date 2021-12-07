@@ -73,7 +73,10 @@ class SimpleSeqTagModel(Model):
         self.ce_criterion = nn.CrossEntropyLoss()
 
     def forward(self, words, sens_lst=None, feats=None):
-        batch_size, seq_len, _ = words.shape
+        if len(words.shape) == 3:
+            batch_size, seq_len, _ = words.shape
+        else:
+            seq_len = words.shape[1]
         # [batch_size, seq_len, n_hidden]
         x = self.encode(words, feats)
         if(self.syntax):
@@ -162,7 +165,10 @@ class CrfSeqTagModel(Model):
         self.ce_criterion = nn.CrossEntropyLoss()
 
     def forward(self, words, sens_lst=None, feats=None):
-        batch_size, seq_len, _ = words.shape
+        if len(words.shape) == 3:
+            batch_size, seq_len, _ = words.shape
+        else:
+            seq_len = words.shape[1]
         # [batch_size, seq_len, n_hidden]
         x = self.encode(words, feats)
 
