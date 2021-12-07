@@ -38,6 +38,9 @@ def parse(parser):
     parser.add_argument('--update_steps',
                         default=1,
                         type=int)             
+    parser.add_argument('--transformer_layers',
+                        default=6,
+                        type=int)    
     # args, unknown = parser.parse_known_args()
     # args, unknown = parser.parse_known_args(unknown, args)
     # args = Config.load(**vars(args), unknown=unknown)

@@ -78,7 +78,7 @@ class Model(nn.Module):
             self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.args.n_lstm_hidden * 2
         elif self.args.encoder == 'transformer':
-            self.encoder = SelfAttentionEncoder(num_encoder_layers=3, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True)
+            self.encoder = SelfAttentionEncoder(num_encoder_layers=self.args.transformer_layers, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True)
             self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.args.n_input
         elif self.args.encoder == 'bert':

@@ -316,7 +316,7 @@ class SimpleSeqTagParser(Parser):
             'warmup':
             0.1
         })
-        else:
+        elif args.encoder == 'lstm':
             args.update({
             'lr':
             1e-3,
@@ -327,6 +327,13 @@ class SimpleSeqTagParser(Parser):
             'weight_decay': 3e-9,
             'decay': .75,
             'decay_steps': 5000
+        })
+        elif args.encoder == 'transformer':
+            args.update({
+            'lr':
+            0.04,
+            'epochs': 5000, 
+            'warmsteps':2000
         })
 
         logger.info(f"{transform}")
@@ -635,7 +642,7 @@ class CrfSeqTagParser(Parser):
             'warmup':
             0.1
         })
-        else:
+        elif args.encoder == 'lstm':
             args.update({
             'lr':
             1e-3,
@@ -646,6 +653,13 @@ class CrfSeqTagParser(Parser):
             'weight_decay': 3e-9,
             'decay': .75,
             'decay_steps': 5000
+        })
+        elif args.encoder == 'transformer':
+            args.update({
+            'lr':
+            0.04,
+            'epochs': 5000, 
+            'warmsteps':2000
         })
 
         logger.info(f"{transform}")

@@ -17,6 +17,7 @@ from supar.utils.parallel import DistributedDataParallel as DDP
 from supar.utils.parallel import is_master
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
+from torch.optim.lr_scheduler import _LRScheduler
 import random
 
 def change2(source_file, tgt_file, task):
@@ -206,6 +207,16 @@ def get_results(gold_path, pred_path, file_seed, task):
 
     return conll_recall, conll_precision, conll_f1, lisa_f1
 
+class VLR(_LRScheduler):
+    def __init__(self, optimizer, warmup_steps=4000, last_epoch=-1):
+        self.warmup_steps = warmup_steps
+        super(VLR, self).__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        epoch = max(self.last_epoch, 1)
+        scale = min(pow(epoch, -0.5), epoch * pow(self.warmup_steps, -1.5))
+        return [base_lr * scale for base_lr in self.base_lrs]
+
 class Parser(object):
 
     NAME = None
@@ -233,9 +244,16 @@ class Parser(object):
         test.build(args.batch_size, args.buckets)
         logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n{'test:':6} {test}\n")
 
-        if args.encoder != 'bert':
+        if args.encoder == 'lstm':
             self.optimizer = Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
             self.scheduler = ExponentialLR(self.optimizer, args.decay**(1/args.decay_steps))
+        elif args.encoder == 'transformer':
+            self.optimizer = Adam(self.model.parameters(),
+                             lr=args.lr,
+                             betas=(0.9, 0.98),
+                             eps=1e-12,
+                             weight_decay=3e-9)
+            self.scheduler = VLR(self.optimizer, warmup_steps=args.warmsteps)
         else:
             from transformers import AdamW, get_linear_schedule_with_warmup
             steps = len(train.loader) * args.epochs // args.update_steps
