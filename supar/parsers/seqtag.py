@@ -31,7 +31,7 @@ class SimpleSeqTagParser(Parser):
 
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
-        self.LABEL = self.transform.POS
+        self.LABEL = self.transform.CPOS
         
 
     def train(self,
@@ -269,7 +269,7 @@ class SimpleSeqTagParser(Parser):
         LABEL = Field('labels')
         transform = CoNLL(FORM=(WORD, CHAR, BERT),
                           LEMMA=LEMMA,
-                          POS=LABEL)
+                          CPOS=LABEL)
 
         train = Dataset(transform, args.train)
         if args.encoder != 'bert':
@@ -358,7 +358,7 @@ class CrfSeqTagParser(Parser):
 
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
-        self.LABEL = self.transform.POS
+        self.LABEL = self.transform.CPOS
 
     def train(self,
               train,
@@ -596,7 +596,7 @@ class CrfSeqTagParser(Parser):
         LABEL = Field('labels')
         transform = CoNLL(FORM=(WORD, CHAR, BERT),
                           LEMMA=LEMMA,
-                          POS=LABEL)
+                          CPOS=LABEL)
 
         train = Dataset(transform, args.train)
         if args.encoder != 'bert':
