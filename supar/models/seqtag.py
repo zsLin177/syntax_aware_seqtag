@@ -74,6 +74,77 @@ class SimpleSeqTagModel(Model):
         score = self.scorer(self.repr_mlp(x))
         return score
 
+    def multi_forward(self, words, sens_lst=None, feats=None, times=3, if_T=True):
+        '''
+        To produce the set of predicted distributions Q={q1, q2, q3, ...}
+        '''
+        q_set = []
+        score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
+        for i in range(times):
+            # [batch_size, seq_len, n_hidden]
+            x = self.encode(words, feats)
+            # [batch_size, seq_len, n_labels]
+            score = self.scorer(self.repr_mlp(x))
+            if if_T:
+                score /= score_T
+            q_set.append(score.softmax(-1))
+        # [batch_size, seq_len, times, n_labels]
+        q = torch.stack(q_set).permute(1, 2, 0, 3)
+        return q
+
+    def skl_div(self, q, p=None):
+        '''
+        q: predicted distributions
+            [batch_size, seq_len, times, n_labels]
+        p: the "gold" label
+            [batch_size, seq_len]
+        '''
+        batch_size, seq_len, times, _ = q.shape
+        if p:
+            # return the kl with "gold"
+            # return : [batch_size, seq_len, times]
+            # [batch_size, seq_len, n_labels, times]
+            q = -q.permute(0, 1, 3, 2).log()
+            index = p.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, times)
+            # [batch_size, seq_len, times]
+            kl = torch.gather(q, 2, index).squeeze(2)
+            return self.sig_scale(kl)
+        else:
+            # return the kl between predicted
+            # return : [batch_size, seq_len, times, times]
+            # [times, n_labels, batch_size*seq_len]
+            q = q.reshape(batch_size*seq_len, times, -1).permute(1, 2, 0)
+            # [times, times, batch_size*seq_len]
+            neg_hp = (q * q.log()).sum(1).unsqueeze(1).expand(-1, times, -1)
+            # [times, times, n_labels, batch_size*seq_len]
+            a = q.unsqueeze(1).expand(-1, times, -1, -1)
+            b = q.unsqueeze(0).expand(times, -1, -1, -1)
+            # [times, times, batch_size*seq_len]
+            cro_h = a*b.log().sum(2)
+            # [batch_size, seq_len, times, times]
+            kl = (neg_hp-cro_h).permute(2, 0, 1).reshape(batch_size, seq_len, times, -1)
+            return self.sig_scale(kl)
+
+
+    def avg_metric(self, q, p=None):
+        skl = self.skl_div(q, p)
+        if p:
+            # skl:[batch_size, seq_len, times]
+            return skl.mean(-1)
+        else:
+            # skl:[batch_size, seq_len, times, times]
+            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
+            return skl.permute(2, 3, 0, 1)[mask].mean(0)
+        
+    
+    def sig_scale(self, kl):
+        '''
+        scale the kl based on sigmoid:
+            skl = 2 * (sigmoid(kl) - 0.5)
+            0<skl<1
+        '''
+        return 2*(kl.sigmoid()-0.5)
+
     def decode(self, score):
         """
         TODO:introduce
