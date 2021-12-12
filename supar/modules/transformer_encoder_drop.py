@@ -1,4 +1,5 @@
 import torch
+import copy
 import torch.nn as nn
 import math
 from torch.nn import (TransformerEncoder, TransformerEncoderLayer)
@@ -26,7 +27,7 @@ class PositionalEncoding(nn.Module):
                             self.pos_embedding[:token_embedding.size(1), :])
 
 
-class SelfAttentionEncoder(nn.Module):
+class SelfAttentionEncoder_Layerdrop(nn.Module):
     def __init__(self,
                  num_encoder_layers: int,
                  emb_size: int,
@@ -36,8 +37,8 @@ class SelfAttentionEncoder(nn.Module):
                  position_embed = True,
                  batch_first = True,
                  norm_first = False,
-                 p = None):
-        super(SelfAttentionEncoder, self).__init__()
+                 p = 0.5):
+        super(SelfAttentionEncoder_Layerdrop, self).__init__()
         self.num_layers = num_encoder_layers
         self.emb_size = emb_size
         self.num_heads = num_heads
@@ -49,8 +50,8 @@ class SelfAttentionEncoder(nn.Module):
 
         encoder_layer = TransformerEncoderLayer(
             d_model=emb_size, nhead=num_heads, dim_feedforward=dim_feedforward, batch_first=batch_first, dropout=dropout, norm_first= norm_first)
-        self.transformer_encoder = TransformerEncoder(
-            encoder_layer, num_layers=num_encoder_layers)
+        self.transformer_encoder = TransformerEncoder_Drop(
+            encoder_layer, num_layers=num_encoder_layers, p=0.5)
         self.positional_encoding = PositionalEncoding(emb_size,
                                                       dropout=dropout)
 
@@ -80,3 +81,41 @@ class SelfAttentionEncoder(nn.Module):
             s += f", dropout={self.dropout}"
 
         return f"{self.__class__.__name__}({s})"
+
+class TransformerEncoder_Drop(TransformerEncoder):
+
+    def __init__(self, encoder_layer, num_layers, norm=None, p=0.5):
+        super().__init__(encoder_layer, num_layers)
+        self.layers = _get_clones(encoder_layer, num_layers)
+        self.num_layers = num_layers
+        self.norm = norm
+        # hyper-parameter
+        self.p = p
+
+    def forward(self, src, mask=None, src_key_padding_mask=None):
+        r"""Pass the input through the encoder layers in turn.
+
+        Args:
+            src: the sequence to the encoder (required).
+            mask: the mask for the src sequence (optional).
+            src_key_padding_mask: the mask for the src keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+        output = src
+        # 将tensor用从均匀分布中抽样得到的值填充 uniform distribution(0-1)
+        dropout_probs = torch.empty(len(self.layers)).uniform_()
+        # for mod in self.layers:
+        #     output = mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask)
+        for i, mod in enumerate(self.layers):
+            if dropout_probs[i] > self.p:
+                output =  mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask)
+
+        if self.norm is not None:
+            output = self.norm(output)
+
+        return output
+def _get_clones(module, N):
+    return torch.nn.ModuleList([copy.deepcopy(module) for i in range(N)])
+

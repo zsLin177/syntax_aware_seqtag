@@ -40,7 +40,14 @@ def parse(parser):
                         type=int)             
     parser.add_argument('--transformer_layers',
                         default=6,
-                        type=int)    
+                        type=int) 
+    parser.add_argument('--p_layerdropout', '-p_l',  
+                        default=0.5, 
+                        type=float, 
+                        help='hyper-parameters of the layerdropout')
+    parser.add_argument('--methods',
+                        choices=['layerdropout', 'dropout', 'both',"nodropout"], 
+                        default='nodropout', help='which methods to use')     
     # args, unknown = parser.parse_known_args()
     # args, unknown = parser.parse_known_args(unknown, args)
     # args = Config.load(**vars(args), unknown=unknown)

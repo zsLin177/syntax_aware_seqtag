@@ -6,6 +6,7 @@ from .dep import (BiaffineDependencyParser, CRF2oDependencyParser,
 from .parser import Parser
 from .sdp import BiaffineSemanticDependencyParser, VISemanticDependencyParser
 from .seqtag import SimpleSeqTagParser, CrfSeqTagParser
+from .teacherseqtag import TeacherSeqTagParser, CrfTeacherSeqTagParser
 
 __all__ = ['BiaffineDependencyParser',
            'CRFDependencyParser',
@@ -17,4 +18,6 @@ __all__ = ['BiaffineDependencyParser',
            'VISemanticDependencyParser',
            'Parser',
            'SimpleSeqTagParser',
-           'CrfSeqTagParser']
+           'CrfSeqTagParser',
+           'TeacherSeqTagParser',
+           'CrfTeacherSeqTagParser']

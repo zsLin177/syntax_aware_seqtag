@@ -14,7 +14,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 # from parser.JParser import JParser
 
-class SimpleSeqTagModel(Model):
+class TeacherSeqTagModel(Model):
     r"""
     TODO: introduction
     """
@@ -74,9 +74,6 @@ class SimpleSeqTagModel(Model):
         score = self.scorer(self.repr_mlp(x))
         return score
 
-    def layer_dropout(self, sth):
-        pass
-
     def decode(self, score):
         """
         TODO:introduce
@@ -90,7 +87,7 @@ class SimpleSeqTagModel(Model):
         return self.ce_criterion(score[mask], gold_labels[mask[:, 1:]])
 
 
-class CrfSeqTagModel(Model):
+class CrfTeacherSeqTagModel(Model):
     r"""
     TODO: introduction
     """

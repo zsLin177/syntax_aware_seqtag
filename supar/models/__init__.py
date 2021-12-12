@@ -7,6 +7,7 @@ from .model import Model
 from .sdp import BiaffineSemanticDependencyModel, VISemanticDependencyModel
 # from .srl import BiaffineSemanticRoleLabelingModel, VISemanticRoleLabelingModel, GLISemanticRoleLabelingModel
 from .seqtag import SimpleSeqTagModel, CrfSeqTagModel
+from .teacherseqtag import TeacherSeqTagModel, CrfTeacherSeqTagModel
 
 __all__ = ['Model',
            'BiaffineDependencyModel',
@@ -18,4 +19,6 @@ __all__ = ['Model',
            'BiaffineSemanticDependencyModel',
            'VISemanticDependencyModel',
            'SimpleSeqTagModel',
-           'CrfSeqTagModel']
+           'CrfSeqTagModel',
+           'TeacherSeqTag',
+           'CrfTeacherSeqTagModel']

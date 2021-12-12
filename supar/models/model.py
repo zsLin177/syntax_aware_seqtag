@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from supar.modules import (CharLSTM, IndependentDropout, SharedDropout,
-                           TransformerEmbedding, VariationalLSTM, SelfAttentionEncoder)
+                           TransformerEmbedding, VariationalLSTM, SelfAttentionEncoder, SelfAttentionEncoder_Layerdrop)
 from supar.utils import Config
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import pdb
@@ -78,7 +78,10 @@ class Model(nn.Module):
             self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.args.n_lstm_hidden * 2
         elif self.args.encoder == 'transformer':
-            self.encoder = SelfAttentionEncoder(num_encoder_layers=self.args.transformer_layers, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True)
+            if self.args.methods == "nodropout":
+                self.encoder = SelfAttentionEncoder(num_encoder_layers=self.args.transformer_layers, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True, p=self.args.p_layerdropout)
+            elif self.args.methods == "layerdropout":
+                self.encoder = SelfAttentionEncoder_Layerdrop(num_encoder_layers=self.args.transformer_layers, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True, p=self.args.p_layerdropout)
             self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.args.n_input
         elif self.args.encoder == 'bert':
