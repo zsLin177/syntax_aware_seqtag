@@ -352,6 +352,23 @@ class Parser(object):
 
         return dataset
 
+    def filter(self, data, buckets=8, batch_size=5000, **kwargs):
+        args = self.args.update(locals())
+        init_logger(logger, verbose=args.verbose)
+
+        self.transform.train()
+        logger.info("Loading the data")
+        dataset = Dataset(self.transform, data)
+        dataset.build(args.batch_size, args.buckets)
+        logger.info(f"\n{dataset}")
+
+        logger.info("Evaluating the dataset")
+        start = datetime.now()
+        metric = self._filter(dataset.loader)
+        elapsed = datetime.now() - start
+        logger.info(f"- {metric}")
+        logger.info(f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s")
+    
     def api(self, input, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, **kwargs):
         """
         input: a string like "中国 建筑业 对 外 开放 始于 八十年代 。"

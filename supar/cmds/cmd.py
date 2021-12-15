@@ -66,3 +66,6 @@ def parse(parser):
     elif args.mode == 'predict':
         parser = Parser.load(args.path)
         parser.predict(**args)
+    elif args.mode == 'filter':
+        parser = Parser.load(args.path)
+        parser.filter(**args)

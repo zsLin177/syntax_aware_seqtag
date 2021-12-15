@@ -39,10 +39,11 @@ def main():
     subparser.add_argument('--task', default='05', choices=['05', '09', '12'], help='which dataset')
     subparser.add_argument('--gold',
                            default='data/conll05-original-style/sc-wsj.final')
-    subparser.add_argument('--vtb',
-                           action='store_true',
-                           default=False,
-                           help='whether to use viterbi')
+
+    # filter
+    subparser = subparsers.add_parser('filter', help='Evaluate the specified parser and dataset.')
+    subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
+    subparser.add_argument('--data', default='data/sdp/DM/test.conllu', help='path to dataset')
     parse(parser)
 
 

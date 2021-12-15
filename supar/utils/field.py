@@ -197,6 +197,7 @@ class Field(RawField):
                           for seq in sequences
                           for token in self.preprocess(seq))
         self.vocab = Vocab(counter, min_freq, self.specials, self.unk_index)
+        self.counter = counter
 
         if not embed:
             self.embed = None

@@ -1,5 +1,5 @@
 
-import pdb
+import pdb, math
 from typing import no_type_check_decorator
 from torch import autograd
 from torch._C import dtype
@@ -49,7 +49,7 @@ class SimpleSeqTagModel(Model):
                  n_mlp=400,
                  n_mlp_argument=300,
                  n_mlp_relation=300,
-                 repr_mlp_dropout=.2,
+                 repr_mlp_dropout=.3,
                  scorer_mlp_dropout=.2,
                  interpolation=0.1,
                  pad_index=0,
@@ -81,8 +81,9 @@ class SimpleSeqTagModel(Model):
         q_set = []
         score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
         for i in range(times):
+            tmp_feats = feats[:]
             # [batch_size, seq_len, n_hidden]
-            x = self.encode(words, feats)
+            x = self.encode(words, tmp_feats)
             # [batch_size, seq_len, n_labels]
             score = self.scorer(self.repr_mlp(x))
             if if_T:
@@ -100,7 +101,7 @@ class SimpleSeqTagModel(Model):
             [batch_size, seq_len]
         '''
         batch_size, seq_len, times, _ = q.shape
-        if p:
+        if p != None:
             # return the kl with "gold"
             # return : [batch_size, seq_len, times]
             # [batch_size, seq_len, n_labels, times]
@@ -120,21 +121,54 @@ class SimpleSeqTagModel(Model):
             a = q.unsqueeze(1).expand(-1, times, -1, -1)
             b = q.unsqueeze(0).expand(times, -1, -1, -1)
             # [times, times, batch_size*seq_len]
-            cro_h = a*b.log().sum(2)
+            cro_h = (a*b.log()).sum(2)
             # [batch_size, seq_len, times, times]
             kl = (neg_hp-cro_h).permute(2, 0, 1).reshape(batch_size, seq_len, times, -1)
             return self.sig_scale(kl)
 
 
-    def avg_metric(self, q, p=None):
+    def avg_metric(self, q, p=None, threshold=0.5):
+        '''
+        return : [batch_size, seq_len]
+        '''
         skl = self.skl_div(q, p)
-        if p:
+        if p != None:
             # skl:[batch_size, seq_len, times]
-            return skl.mean(-1)
+            res = skl.mean(-1)
+            res_mask = res.gt(threshold)
+            return res, res_mask
         else:
             # skl:[batch_size, seq_len, times, times]
             mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
-            return skl.permute(2, 3, 0, 1)[mask].mean(0)
+            res = skl.permute(2, 3, 0, 1)[mask].mean(0)
+            res_mask = res.gt(threshold)
+            return res, res_mask
+    
+    def vote_metric(self, q, p=None, threshold=0.5, vote_rate=0.5):
+        skl = self.skl_div(q, p)
+        times = skl.shape[-1]
+        bound_num = math.floor(times * vote_rate)
+        if p != None:
+            # skl:[batch_size, seq_len, times]
+            return skl.gt(threshold).sum(-1).ge(bound_num)
+        else:
+            # skl:[batch_size, seq_len, times, times]
+            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
+            return skl.permute(2, 3, 0, 1)[mask].gt(threshold).sum(0).ge(bound_num)
+
+    def var_metric(self, q, p=None, varhold=0.1):
+        skl = self.skl_div(q, p)
+        if p != None:
+            # skl:[batch_size, seq_len, times]
+            res = skl.std(-1)
+            res_mask = res.gt(varhold)
+            return res, res_mask
+        else:
+            # skl:[batch_size, seq_len, times, times]
+            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
+            res = skl.permute(2, 3, 0, 1)[mask].std(0)
+            res_mask = res.gt(varhold)
+            return res, res_mask
         
     
     def sig_scale(self, kl):
