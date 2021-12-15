@@ -78,10 +78,8 @@ class Model(nn.Module):
             self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.args.n_lstm_hidden * 2
         elif self.args.encoder == 'transformer':
-            if self.args.methods == "nodropout":
-                self.encoder = SelfAttentionEncoder(num_encoder_layers=self.args.transformer_layers, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True, p=self.args.p_layerdropout)
-            elif self.args.methods == "layerdropout":
-                self.encoder = SelfAttentionEncoder_Layerdrop(num_encoder_layers=self.args.transformer_layers, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True, p=self.args.p_layerdropout)
+            # self.encoder = SelfAttentionEncoder(num_encoder_layers=self.args.transformer_layers, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True)
+            self.encoder = SelfAttentionEncoder_Layerdrop(num_encoder_layers=self.args.transformer_layers, emb_size=self.args.n_input, dim_feedforward=800, num_heads=8, position_embed=True) 
             self.encoder_dropout = SharedDropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.args.n_input
         elif self.args.encoder == 'bert':
@@ -133,7 +131,7 @@ class Model(nn.Module):
 
         return embed
 
-    def encode(self, words, feats=None):
+    def encode(self, words, feats=None, if_layerdrop=False, p_layerdrop=0.5, if_selfattdrop=False, p_attdrop=0.5):
         if self.args.encoder == 'lstm':
             x = pack_padded_sequence(self.embed(words, feats), words.ne(self.args.pad_index).sum(1).tolist(), True, False)
             x, _ = self.encoder(x)
@@ -141,7 +139,7 @@ class Model(nn.Module):
         elif self.args.encoder == 'transformer':
             embed = self.embed(words, feats)
             mask = words.ne(self.args.pad_index)
-            x = self.encoder(embed, ~mask)
+            x = self.encoder(embed, ~mask, if_layerdrop, p_layerdrop, if_selfattdrop, p_attdrop)
         else:
             x = self.encoder(words)
         return self.encoder_dropout(x)

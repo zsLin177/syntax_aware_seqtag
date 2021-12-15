@@ -25,11 +25,14 @@ def main():
     subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
     subparser.add_argument('--lr_rate', default=1, type=int)
+    subparser.add_argument('--if_openDrop_e', default=False, type=bool, help='whether to open the dropout during training')
+    
     
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
     subparser.add_argument('--data', default='data/sdp/DM/test.conllu', help='path to dataset')
+    subparser.add_argument('--if_openDrop_e', default=False, type=bool, help='whether to open the dropout during evaluate')
     # predict
     subparser = subparsers.add_parser('predict', help='Use a trained parser to make predictions.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
@@ -39,10 +42,7 @@ def main():
     subparser.add_argument('--task', default='05', choices=['05', '09', '12'], help='which dataset')
     subparser.add_argument('--gold',
                            default='data/conll05-original-style/sc-wsj.final')
-    subparser.add_argument('--vtb',
-                           action='store_true',
-                           default=False,
-                           help='whether to use viterbi')
+    subparser.add_argument('--if_openDrop_p', default=False, type=bool, help='whether to open the dropout during predict')
     parse(parser)
 
 

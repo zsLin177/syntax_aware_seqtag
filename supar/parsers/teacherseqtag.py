@@ -131,7 +131,7 @@ class TeacherSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats)
+            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.if_selfattdrop)
             loss = self.model.loss(score, labels, mask)
             loss = loss / self.args.update_steps
             loss.backward()
@@ -151,9 +151,11 @@ class TeacherSeqTagParser(Parser):
 
 
     @torch.no_grad()
-    def _evaluate(self, loader):
-        # self.model.eval()
-        self.model.train()
+    def _evaluate(self, loader, if_openDrop_e=False):
+        if if_openDrop_e:
+            self.model.train()
+        else:
+            self.model.eval()
 
         total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
 
@@ -162,7 +164,7 @@ class TeacherSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats)
+            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.if_selfattdrop)
             preds = self.model.decode(score)[:, 1:]
             mask = mask[:, 1:]
             metric(preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
@@ -171,9 +173,11 @@ class TeacherSeqTagParser(Parser):
         return metric
 
     @torch.no_grad()
-    def _predict(self, loader):
-        self.model.eval()
-
+    def _predict(self, loader, if_openDrop_p=False):
+        if if_openDrop_p:
+            self.model.train()
+        else:
+            self.model.eval()
         total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
         # for words, *feats, labels in loader:
@@ -183,7 +187,7 @@ class TeacherSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats)
+            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.if_selfattdrop)
             output = self.model.decode(score)[:, 1:]
             mask = mask[:, 1:]
             metric(output.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))

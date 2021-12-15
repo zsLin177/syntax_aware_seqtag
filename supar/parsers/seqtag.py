@@ -172,6 +172,7 @@ class SimpleSeqTagParser(Parser):
     @torch.no_grad()
     def _predict(self, loader):
         self.model.eval()
+        # self.model.train()
 
         total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
@@ -498,7 +499,8 @@ class CrfSeqTagParser(Parser):
 
     @torch.no_grad()
     def _predict(self, loader):
-        self.model.eval()
+        # self.model.eval()
+        self.model.train()
 
         total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
         preds = {'labels': [], 'probs': [] if self.args.prob else None}

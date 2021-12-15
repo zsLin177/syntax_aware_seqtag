@@ -275,9 +275,9 @@ class Parser(object):
 
             logger.info(f"Epoch {epoch} / {args.epochs}:")
             self._train(train.loader)
-            dev_metric = self._evaluate(dev.loader)
+            dev_metric = self._evaluate(dev.loader, args.if_openDrop_e)
             logger.info(f"- {dev_metric}")
-            test_metric = self._evaluate(test.loader)
+            test_metric = self._evaluate(test.loader, args.if_openDrop_e)
             logger.info(f"- {test_metric}")
 
             t = datetime.now() - start
@@ -291,7 +291,7 @@ class Parser(object):
             elapsed += t
             if epoch - best_e >= args.patience:
                 break
-        metric = self.load(**args)._evaluate(test.loader)
+        metric = self.load(**args)._evaluate(test.loader, args.if_openDrop_e)
 
         logger.info(f"Epoch {best_e} saved")
         logger.info(f"{'dev:':5} {best_metric}")
@@ -310,7 +310,7 @@ class Parser(object):
 
         logger.info("Evaluating the dataset")
         start = datetime.now()
-        metric = self._evaluate(dataset.loader)
+        metric = self._evaluate(dataset.loader, args.if_openDrop_e)
         elapsed = datetime.now() - start
         logger.info(f"- {metric}")
         logger.info(f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s")
@@ -333,7 +333,7 @@ class Parser(object):
 
         logger.info("Making predictions on the dataset")
         start = datetime.now()
-        preds = self._predict(dataset.loader)
+        preds = self._predict(dataset.loader, args.if_openDrop_p)
         elapsed = datetime.now() - start
 
         for name, value in preds.items():

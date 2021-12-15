@@ -41,13 +41,25 @@ def parse(parser):
     parser.add_argument('--transformer_layers',
                         default=6,
                         type=int) 
-    parser.add_argument('--p_layerdropout', '-p_l',  
+    parser.add_argument('--p_layerdrop', '-p_l',  
                         default=0.5, 
                         type=float, 
                         help='hyper-parameters of the layerdropout')
-    parser.add_argument('--methods',
-                        choices=['layerdropout', 'dropout', 'both',"nodropout"], 
-                        default='nodropout', help='which methods to use')     
+    # parser.add_argument('--methods',
+    #                     choices=['layerdropout', 'dropout', 'both',"nodropout"], 
+    #                     default='nodropout', help='which methods to use') 
+    parser.add_argument("--if_layerdrop",
+                        default=False,
+                        type=bool,
+                        help="whether to use LayerDrop")   
+    parser.add_argument("--if_selfattdrop",
+                        default=False,
+                        type=bool,
+                        help="whether to use Attention Dropout")    
+    parser.add_argument("--p_attdrop",
+                        default=0.5,
+                        type=float,
+                        help="dropout for self-attention")    
     # args, unknown = parser.parse_known_args()
     # args, unknown = parser.parse_known_args(unknown, args)
     # args = Config.load(**vars(args), unknown=unknown)

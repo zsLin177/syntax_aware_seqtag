@@ -67,9 +67,9 @@ class TeacherSeqTagModel(Model):
         self.scorer = MLP(n_in=n_mlp, n_out=n_labels, activation=False)
         self.ce_criterion = nn.CrossEntropyLoss()
 
-    def forward(self, words, sens_lst=None, feats=None):
+    def forward(self, words, sens_lst=None, feats=None, if_layerdrop=False, p_layerdrop=0.5, if_selfattdrop=False, p_attdrop=0.5):
         # [batch_size, seq_len, n_hidden]
-        x = self.encode(words, feats)
+        x = self.encode(words, feats, if_layerdrop, p_layerdrop, if_selfattdrop, p_attdrop)
         # [batch_size, seq_len, n_labels]
         score = self.scorer(self.repr_mlp(x))
         return score
