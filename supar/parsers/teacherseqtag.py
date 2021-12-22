@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import os
+import os, json, string
 
 import pdb
 from re import X
@@ -121,6 +121,30 @@ class TeacherSeqTagParser(Parser):
 
         return super().predict(**Config().update(locals()))
 
+    def filter(self,
+                    data,
+                    buckets=8,
+                    batch_size=5000,
+                    verbose=True,
+                    **kwargs):
+            r"""
+            Args:
+                data (str):
+                    The data for evaluation, both list of instances and filename are allowed.
+                buckets (int):
+                    The number of buckets that sentences are assigned to. Default: 32.
+                batch_size (int):
+                    The number of tokens in each batch. Default: 5000.
+                verbose (bool):
+                    If ``True``, increases the output verbosity. Default: ``True``.
+                kwargs (dict):
+                    A dict holding the unconsumed arguments that can be used to update the configurations for evaluation.
+            Returns:
+                The loss scalar and evaluation results.
+            """
+
+            return super().filter(**Config().update(locals()))
+
     def _train(self, loader):
         self.model.train()
 
@@ -198,6 +222,77 @@ class TeacherSeqTagParser(Parser):
         print(metric)
         return preds
 
+ 
+    @torch.no_grad()
+    def _filter(self, loader, if_openDrop_p=False, out_file=None, ):
+        # dropout open
+        if if_openDrop_p:
+            self.model.train()
+        else:
+            self.model.eval()
+
+        sum_word = .0
+        sum_picked_word = .0
+        picked_data = []
+
+        total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
+        for batch in loader:
+            sentences_lst = [s.words for s in batch.sentences]
+            label_str_lst = [s.labels for s in batch.sentences]
+            words, *feats, labels = batch
+            word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            score = self.model(words, sentences_lst, feats[:], self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.if_selfattdrop)
+            preds = self.model.decode(score)[:, 1:]
+            n_mask = mask[:, 1:]
+            metric(preds.masked_fill(~n_mask, -1), labels.masked_fill(~n_mask, -1))
+
+            q = self.model.multi_forward(words, sentences_lst, feats, self.args.times, self.args.if_T, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.if_selfattdrop)
+            # [batch_size, seq_len]
+            # use std metric
+            # skl, if_false_mask = self.model.var_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), varhold=0.375)
+
+            # use mean metric
+            # with "gold"
+            skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
+            # without "gold"
+            # skl, if_false_mask = self.model.avg_metric(q, threshold=0.45)
+
+
+            if_false_mask = if_false_mask & mask
+
+            # sum_picked_word += if_false_mask.sum().item()
+            sum_word += mask.sum().item()
+            # [k]
+            b_idx, s_idx = if_false_mask.nonzero()[:, 0].tolist(), if_false_mask.nonzero()[:, 1].tolist()
+            skl_value = skl[if_false_mask].tolist()
+            prd_seq = preds[if_false_mask[:, 1:]].tolist()
+
+            min_freq = 3
+            ignore_label_set = {'NR'}
+            for i in range(len(b_idx)):
+                this_dict = {'sentence': sentences_lst[b_idx[i]], 'label_seq': label_str_lst[b_idx[i]],
+                            'wrong_idx': s_idx[i]-1, 'wrong_word': sentences_lst[b_idx[i]][s_idx[i]-1],
+                            'annotated_label': label_str_lst[b_idx[i]][s_idx[i]-1], 'predicted_label': self.LABEL.vocab.itos[prd_seq[i]],
+                            'sort_key_value': skl_value[i]}
+                wrong_word = this_dict['wrong_word']
+                annotated_label = this_dict['annotated_label']
+                if(self.WORD.counter[wrong_word] >= min_freq):
+                    picked_data.append(this_dict)
+                elif(annotated_label not in ignore_label_set):
+                    picked_data.append(this_dict)
+
+        sum_picked_word = len(picked_data)
+        picked_ratio = sum_picked_word / sum_word
+        print(f'picked words: {sum_picked_word}, sum words: {sum_word}, ratio: {picked_ratio:6.2%}')
+        print(metric)
+
+        picked_data.sort(key=lambda x:x['sort_key_value'], reverse=True)
+        with open(out_file, 'w', encoding='utf-8') as f:
+            for this_dict in picked_data:
+                f.write(json.dumps(this_dict, ensure_ascii=False)+'\n')
+        return metric
+            
     @classmethod
     def build(cls, path, min_freq=3, fix_len=20, **kwargs):
         r"""

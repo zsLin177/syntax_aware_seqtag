@@ -43,6 +43,15 @@ def main():
     subparser.add_argument('--gold',
                            default='data/conll05-original-style/sc-wsj.final')
     subparser.add_argument('--if_openDrop_p', default=False, type=bool, help='whether to open the dropout during predict')
+
+    # filter
+    subparser = subparsers.add_parser('filter', help='Evaluate the specified parser and dataset.')
+    subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
+    subparser.add_argument('--data', default='data/sdp/DM/test.conllu', help='path to dataset')  
+    subparser.add_argument('--output_data_full', default="data-error/output-full.txt", help="output the full results of possible mislabeled data.")
+    subparser.add_argument('--if_openDrop_p', default=False, type=bool, help='whether to open the dropout during predict')
+    subparser.add_argument('--times', default=10, type=int, help="how many times to predict.")  
+    subparser.add_argument('--if_T', default=False, type=bool, help='whether to open the dropout during predict')   
     parse(parser)
 
 

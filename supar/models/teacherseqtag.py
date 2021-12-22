@@ -1,5 +1,5 @@
 
-import pdb
+import pdb, math
 from typing import no_type_check_decorator
 from torch import autograd
 from torch._C import dtype
@@ -74,6 +74,112 @@ class TeacherSeqTagModel(Model):
         score = self.scorer(self.repr_mlp(x))
         return score
 
+
+    def multi_forward(self, words, sens_lst=None, feats=None, times=3, if_T=True, if_layerdrop=False, p_layerdrop=0.5, if_selfattdrop=False, p_attdrop=0.5):
+        '''
+        To produce the set of predicted distributions Q={q1, q2, q3, ...}
+        '''
+        q_set = []
+        score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
+        for i in range(times):
+            tmp_feats = feats[:]
+            # [batch_size, seq_len, n_hidden]
+            x = self.encode(words, tmp_feats, if_layerdrop, p_layerdrop, if_selfattdrop, p_attdrop)
+            # [batch_size, seq_len, n_labels]
+            score = self.scorer(self.repr_mlp(x))
+            if if_T:
+                score /= score_T
+            q_set.append(score.softmax(-1))
+        # [batch_size, seq_len, times, n_labels]
+        q = torch.stack(q_set).permute(1, 2, 0, 3)
+        return q
+
+    def skl_div(self, q, p=None):
+        '''
+        q: predicted distributions
+            [batch_size, seq_len, times, n_labels]
+        p: the "gold" label
+            [batch_size, seq_len]
+        '''
+        batch_size, seq_len, times, _ = q.shape
+        if p != None:
+            # return the kl with "gold"
+            # return : [batch_size, seq_len, times]
+            # [batch_size, seq_len, n_labels, times]
+            q = -q.permute(0, 1, 3, 2).log()
+            index = p.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, times)
+            # [batch_size, seq_len, times]
+            kl = torch.gather(q, 2, index).squeeze(2)
+            return self.sig_scale(kl)
+        else:
+            # return the kl between predicted
+            # return : [batch_size, seq_len, times, times]
+            # [times, n_labels, batch_size*seq_len]
+            q = q.reshape(batch_size*seq_len, times, -1).permute(1, 2, 0)
+            # [times, times, batch_size*seq_len]
+            neg_hp = (q * q.log()).sum(1).unsqueeze(1).expand(-1, times, -1)
+            # [times, times, n_labels, batch_size*seq_len]
+            a = q.unsqueeze(1).expand(-1, times, -1, -1)
+            b = q.unsqueeze(0).expand(times, -1, -1, -1)
+            # [times, times, batch_size*seq_len]
+            cro_h = (a*b.log()).sum(2)
+            # [batch_size, seq_len, times, times]
+            kl = (neg_hp-cro_h).permute(2, 0, 1).reshape(batch_size, seq_len, times, -1)
+            return self.sig_scale(kl)
+
+
+    def avg_metric(self, q, p=None, threshold=0.5):
+        '''
+        return : [batch_size, seq_len]
+        '''
+        skl = self.skl_div(q, p)
+        if p != None:
+            # skl:[batch_size, seq_len, times]
+            res = skl.mean(-1)
+            res_mask = res.gt(threshold)
+            return res, res_mask
+        else:
+            # skl:[batch_size, seq_len, times, times]
+            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
+            res = skl.permute(2, 3, 0, 1)[mask].mean(0)
+            res_mask = res.gt(threshold)
+            return res, res_mask
+    
+    def vote_metric(self, q, p=None, threshold=0.5, vote_rate=0.5):
+        skl = self.skl_div(q, p)
+        times = skl.shape[-1]
+        bound_num = math.floor(times * vote_rate)
+        if p != None:
+            # skl:[batch_size, seq_len, times]
+            return skl.gt(threshold).sum(-1).ge(bound_num)
+        else:
+            # skl:[batch_size, seq_len, times, times]
+            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
+            return skl.permute(2, 3, 0, 1)[mask].gt(threshold).sum(0).ge(bound_num)
+
+    def var_metric(self, q, p=None, varhold=0.1):
+        skl = self.skl_div(q, p)
+        if p != None:
+            # skl:[batch_size, seq_len, times]
+            res = skl.std(-1)
+            res_mask = res.gt(varhold)
+            return res, res_mask
+        else:
+            # skl:[batch_size, seq_len, times, times]
+            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
+            res = skl.permute(2, 3, 0, 1)[mask].std(0)
+            res_mask = res.gt(varhold)
+            return res, res_mask
+        
+    
+    def sig_scale(self, kl):
+        '''
+        scale the kl based on sigmoid:
+            skl = 2 * (sigmoid(kl) - 0.5)
+            0<skl<1
+        '''
+        return 2*(kl.sigmoid()-0.5)   
+
     def decode(self, score):
         """
         TODO:introduce
@@ -86,7 +192,7 @@ class TeacherSeqTagModel(Model):
         """
         return self.ce_criterion(score[mask], gold_labels[mask[:, 1:]])
 
-
+ 
 class CrfTeacherSeqTagModel(Model):
     r"""
     TODO: introduction

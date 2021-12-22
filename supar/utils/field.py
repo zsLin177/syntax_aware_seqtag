@@ -197,6 +197,8 @@ class Field(RawField):
                           for seq in sequences
                           for token in self.preprocess(seq))
         self.vocab = Vocab(counter, min_freq, self.specials, self.unk_index)
+        # ??
+        self.counter = counter
 
         if not embed:
             self.embed = None
@@ -339,7 +341,7 @@ class ChartField(Field):
     Examples:
         >>> chart = [[    None,    'NP',    None,    None,  'S|<>',     'S'],
                      [    None,    None, 'VP|<>',    None,    'VP',    None],
-                     [    None,    None,    None, 'VP|<>', 'S::VP',    None],
+                     [    None,    None,    None, 'VP|<>', 'S::VP',    None],W
                      [    None,    None,    None,    None,    'NP',    None],
                      [    None,    None,    None,    None,    None,  'S|<>'],
                      [    None,    None,    None,    None,    None,    None]]
