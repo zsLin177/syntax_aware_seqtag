@@ -260,7 +260,7 @@ class SimpleSeqTagParser(Parser):
             skl, if_false_mask = self.model.vote_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), vote_low_rate=0.3, vote_up_rate=0.5)
 
             # use self uncer
-            skl, if_false_mask = self.model.su_metric(self_uncer, threshold=0.71)
+            # skl, if_false_mask = self.model.su_metric(self_uncer, threshold=0.71)
 
 
             if_false_mask = if_false_mask & mask
