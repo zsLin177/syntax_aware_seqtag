@@ -156,8 +156,8 @@ class SimpleSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats)
-            loss = self.model.loss(score, labels, mask)
+            score, self_uncer = self.model(words, sentences_lst, feats)
+            loss = self.model.loss(score, labels, mask, self_uncer)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -166,7 +166,7 @@ class SimpleSeqTagParser(Parser):
                 self.scheduler.step()
                 self.optimizer.zero_grad()
             
-            preds = self.model.decode(score)[:, 1:]
+            preds = self.model.decode(score, self_uncer)[:, 1:]
             mask = mask[:, 1:]
             metric(preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
             bar.set_postfix_str(
@@ -186,8 +186,8 @@ class SimpleSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats)
-            preds = self.model.decode(score)[:, 1:]
+            score, self_uncer = self.model(words, sentences_lst, feats)
+            preds = self.model.decode(score, self_uncer)[:, 1:]
             mask = mask[:, 1:]
             metric(preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
         # total_loss /= len(loader)
@@ -207,8 +207,8 @@ class SimpleSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats)
-            output = self.model.decode(score)[:, 1:]
+            score, self_uncer = self.model(words, sentences_lst, feats)
+            output = self.model.decode(score, self_uncer)[:, 1:]
             mask = mask[:, 1:]
             metric(output.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
             lens = mask.sum(-1).tolist()
@@ -221,7 +221,8 @@ class SimpleSeqTagParser(Parser):
     @torch.no_grad()
     def _filter(self, loader, out_file='filter.jsonlines'):
         # dropout open
-        self.model.train()
+        # self.model.train()
+        self.model.eval()
         
         sum_word = .0
         sum_picked_word = .0
@@ -234,21 +235,25 @@ class SimpleSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats[:])
-            preds = self.model.decode(score)[:, 1:]
+            score, self_uncer = self.model(words, sentences_lst, feats[:])
+            preds = self.model.decode(score, self_uncer)[:, 1:]
             n_mask = mask[:, 1:]
             metric(preds.masked_fill(~n_mask, -1), labels.masked_fill(~n_mask, -1))
 
-            q = self.model.multi_forward(words, sentences_lst, feats, times=10, if_T=False)
+            # q = self.model.multi_forward(words, sentences_lst, feats, times=10, if_T=False)
+
             # [batch_size, seq_len]
             # use std metric
             # skl, if_false_mask = self.model.var_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), varhold=0.375)
 
             # use mean metric
             # with "gold"
-            skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
+            # skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
             # without "gold"
             # skl, if_false_mask = self.model.avg_metric(q, threshold=0.45)
+
+            # use self uncer
+            skl, if_false_mask = self.model.su_metric(self_uncer, threshold=0.71)
 
 
             if_false_mask = if_false_mask & mask
@@ -398,7 +403,8 @@ class SimpleSeqTagParser(Parser):
             WORD.bos_index,
             'unk_index':
             WORD.unk_index,
-            'interpolation': args.itp
+            'interpolation': args.itp,
+            'self_uncertain': args.self_uncer
         })
 
         if(args.encoder == 'bert'):
