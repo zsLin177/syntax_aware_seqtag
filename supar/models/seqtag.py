@@ -111,19 +111,17 @@ class SimpleSeqTagModel(Model):
             kl = torch.gather(q, 2, index).squeeze(2)
             return self.sig_scale(kl)
         else:
-            # return the kl between predicted
-            # return : [batch_size, seq_len, times, times]
-            # [times, n_labels, batch_size*seq_len]
-            q = q.reshape(batch_size*seq_len, times, -1).permute(1, 2, 0)
-            # [times, times, batch_size*seq_len]
-            neg_hp = (q * q.log()).sum(1).unsqueeze(1).expand(-1, times, -1)
-            # [times, times, n_labels, batch_size*seq_len]
-            a = q.unsqueeze(1).expand(-1, times, -1, -1)
-            b = q.unsqueeze(0).expand(times, -1, -1, -1)
-            # [times, times, batch_size*seq_len]
-            cro_h = (a*b.log()).sum(2)
-            # [batch_size, seq_len, times, times]
-            kl = (neg_hp-cro_h).permute(2, 0, 1).reshape(batch_size, seq_len, times, -1)
+            # first compute an average distribution
+            # then return skl with this avg distribution
+            # return : [batch_size, seq_len, times]
+            # [batch_size, seq_len, n_labels]
+            avg_dis = q.mean(2)
+            # [batch_size, seq_len]
+            neg_avg_e = (avg_dis * avg_dis.log()).sum(-1)
+            expanded_avg = avg_dis.unsqueeze(2).expand(-1, -1, times, -1)
+            # [batch_size, seq_len, times]
+            cross_e = -(expanded_avg * q.log()).sum(-1)
+            kl = neg_avg_e.unsqueeze(-1) + cross_e
             return self.sig_scale(kl)
 
 
@@ -132,45 +130,34 @@ class SimpleSeqTagModel(Model):
         return : [batch_size, seq_len]
         '''
         skl = self.skl_div(q, p)
-        if p != None:
-            # skl:[batch_size, seq_len, times]
-            res = skl.mean(-1)
-            res_mask = res.gt(threshold)
-            return res, res_mask
-        else:
-            # skl:[batch_size, seq_len, times, times]
-            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
-            res = skl.permute(2, 3, 0, 1)[mask].mean(0)
-            res_mask = res.gt(threshold)
-            return res, res_mask
+        # skl:[batch_size, seq_len, times]
+        res = skl.mean(-1)
+        res_mask = res.gt(threshold)
+        return res, res_mask
     
-    def vote_metric(self, q, p=None, threshold=0.5, vote_rate=0.5):
-        skl = self.skl_div(q, p)
-        times = skl.shape[-1]
-        bound_num = math.floor(times * vote_rate)
-        if p != None:
-            # skl:[batch_size, seq_len, times]
-            return skl.gt(threshold).sum(-1).ge(bound_num)
-        else:
-            # skl:[batch_size, seq_len, times, times]
-            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
-            return skl.permute(2, 3, 0, 1)[mask].gt(threshold).sum(0).ge(bound_num)
+    def vote_metric(self, q, p=None, vote_low_rate=0.3, vote_up_rate=0.9):
+        '''
+        q: predicted distributions
+            [batch_size, seq_len, times, n_labels]
+        p: the "gold" label
+            [batch_size, seq_len]
+        '''
+        times = q.shape[2]
+        preds = q.argmax(-1)
+        # [batch_size, seq_len]
+        vote = times - p.unsqueeze(-1).expand(-1, -1, times).eq(preds).sum(-1)
+        # if the 'gold' label gets votes more than vote_rate, then we think this may be a mistake
+        mask = (vote/times).ge(vote_low_rate) & (vote/times).le(vote_up_rate)
+        return vote, mask
+
 
     def var_metric(self, q, p=None, varhold=0.1):
         skl = self.skl_div(q, p)
-        if p != None:
-            # skl:[batch_size, seq_len, times]
-            res = skl.std(-1)
-            res_mask = res.gt(varhold)
-            return res, res_mask
-        else:
-            # skl:[batch_size, seq_len, times, times]
-            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
-            res = skl.permute(2, 3, 0, 1)[mask].std(0)
-            res_mask = res.gt(varhold)
-            return res, res_mask
+        # skl:[batch_size, seq_len, times]
+        res = skl.std(-1)
+        res_mask = res.gt(varhold)
+        return res, res_mask
         
-    
     def sig_scale(self, kl):
         '''
         scale the kl based on sigmoid:

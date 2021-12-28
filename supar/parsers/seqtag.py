@@ -240,15 +240,23 @@ class SimpleSeqTagParser(Parser):
             metric(preds.masked_fill(~n_mask, -1), labels.masked_fill(~n_mask, -1))
 
             q = self.model.multi_forward(words, sentences_lst, feats, times=10, if_T=False)
+
             # [batch_size, seq_len]
             # use std metric
+            # with "gold"
             # skl, if_false_mask = self.model.var_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), varhold=0.375)
+            # without "gold"
+            # skl, if_false_mask = self.model.var_metric(q, varhold=0.317)
 
             # use mean metric
             # with "gold"
-            skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
+            # skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
             # without "gold"
-            # skl, if_false_mask = self.model.avg_metric(q, threshold=0.45)
+            # skl, if_false_mask = self.model.avg_metric(q, threshold=0.65)
+
+            # use vote metric
+            # use "gold"
+            skl, if_false_mask = self.model.vote_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), vote_low_rate=0.3, vote_up_rate=0.5)
 
 
             if_false_mask = if_false_mask & mask
