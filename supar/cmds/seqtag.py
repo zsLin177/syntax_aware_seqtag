@@ -25,6 +25,7 @@ def main():
     subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
     subparser.add_argument('--lr_rate', default=1, type=int)
+    subparser.add_argument('--self_uncer', action='store_true', help='whether to use self uncer')
     
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
