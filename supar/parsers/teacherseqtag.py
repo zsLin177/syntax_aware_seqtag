@@ -155,7 +155,7 @@ class TeacherSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.if_selfattdrop)
+            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.p_attdrop)
             loss = self.model.loss(score, labels, mask)
             loss = loss / self.args.update_steps
             loss.backward()
@@ -188,7 +188,7 @@ class TeacherSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.if_selfattdrop)
+            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.p_attdrop)
             preds = self.model.decode(score)[:, 1:]
             mask = mask[:, 1:]
             metric(preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
@@ -211,7 +211,7 @@ class TeacherSeqTagParser(Parser):
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.if_selfattdrop)
+            score = self.model(words, sentences_lst, feats, self.args.if_layerdrop, self.args.p_layerdrop, self.args.if_selfattdrop, self.args.p_attdrop)
             output = self.model.decode(score)[:, 1:]
             mask = mask[:, 1:]
             metric(output.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))

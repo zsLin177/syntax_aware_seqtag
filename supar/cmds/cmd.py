@@ -45,6 +45,10 @@ def parse(parser):
                         default=0.5, 
                         type=float, 
                         help='hyper-parameters of the layerdropout')
+    parser.add_argument("--dropout",
+                        default=0.3,
+                        type=float,
+                        help="normal dropout")    
     # parser.add_argument('--methods',
     #                     choices=['layerdropout', 'dropout', 'both',"nodropout"], 
     #                     default='nodropout', help='which methods to use') 

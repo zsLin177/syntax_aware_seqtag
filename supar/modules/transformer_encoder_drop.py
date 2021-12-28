@@ -136,7 +136,8 @@ def _get_clones(module, N):
     return torch.nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
 class TransformerEncoderLayer_Drop(TransformerEncoderLayer):
-
+    
+    __constants__ = ['batch_first', 'norm_first']
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation=F.relu,layer_norm_eps=1e-5, 
                 batch_first=False, norm_first=False,device=None, dtype=None):
         factory_kwargs = {'device': device, 'dtype': dtype}
@@ -187,7 +188,6 @@ class TransformerEncoderLayer_Drop(TransformerEncoderLayer):
         else:
             x = self.norm1(x + self._sa_block(x, src_mask, src_key_padding_mask, if_selfattdrop, p_attdrop))
             x = self.norm2(x + self._ff_block(x))
-
         return x
 
 
@@ -208,7 +208,7 @@ class TransformerEncoderLayer_Drop(TransformerEncoderLayer):
             mask = torch.empty_like(attention).uniform_()
             # write to GPU
             # mask = mask.lt(float(p_attdrop)).to(device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
-            mask = mask.lt(float(p_attdrop))
+            mask = mask.lt(p_attdrop)
             # '_' represent modify the variable attention
             attention.masked_fill_(mask, 0)
             x= torch.matmul(attention, x)
