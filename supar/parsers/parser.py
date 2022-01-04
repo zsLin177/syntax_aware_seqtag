@@ -3,6 +3,7 @@
 import os
 from datetime import datetime, timedelta
 import pdb
+from pickle import NONE
 import subprocess
 import dill
 import supar
@@ -222,10 +223,11 @@ class Parser(object):
     NAME = None
     MODEL = None
 
-    def __init__(self, args, model, transform):
+    def __init__(self, args, model, transform, aux_model=None):
         self.args = args
         self.model = model
         self.transform = transform
+        self.aux_model = aux_model
 
     def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
               clip=5.0, patience=100, **kwargs):
@@ -433,7 +435,15 @@ class Parser(object):
         model.load_state_dict(state['state_dict'], False)
         model.to(args.device)
         transform = state['transform']
-        return cls(args, model, transform)
+
+        if 'aux_state_dict' in state.keys():
+            aux_model = cls.MODEL(**args)
+            aux_model.load_pretrained(state['aux_pretrained'])
+            aux_model.load_state_dict(state['aux_state_dict'], False)
+            aux_model.to(args.device)
+            return cls(args, model, transform, aux_model)
+        else:
+            return cls(args, model, transform)
 
     def save(self, path):
         model = self.model
@@ -442,9 +452,22 @@ class Parser(object):
         args = model.args
         state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
         pretrained = state_dict.pop('pretrained.weight', None)
-        state = {'name': self.NAME,
-                 'args': args,
-                 'state_dict': state_dict,
-                 'pretrained': pretrained,
-                 'transform': self.transform}
+
+        if self.aux_model is not None:
+            aux_model = self.aux_model
+            aux_state_dict = {k: v.cpu() for k, v in aux_model.state_dict().items()}
+            aux_pretrained = aux_state_dict.pop('pretrained.weight', None)
+            state = {'name': self.NAME,
+                    'args': args,
+                    'state_dict': state_dict,
+                    'pretrained': pretrained,
+                    'transform': self.transform,
+                    'aux_state_dict': aux_state_dict,
+                    'aux_pretrained': aux_pretrained}
+        else:
+            state = {'name': self.NAME,
+                    'args': args,
+                    'state_dict': state_dict,
+                    'pretrained': pretrained,
+                    'transform': self.transform}
         torch.save(state, path, pickle_module=dill)

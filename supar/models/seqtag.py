@@ -93,6 +93,7 @@ class SimpleSeqTagModel(Model):
         ssu_mask = ssu.gt(threshold)
         return ssu, ssu_mask
 
+    @torch.no_grad()
     def multi_forward(self, words, sens_lst=None, feats=None, times=3, if_T=True):
         '''
         To produce the set of predicted distributions Q={q1, q2, q3, ...}
@@ -162,11 +163,19 @@ class SimpleSeqTagModel(Model):
         '''
         times = q.shape[2]
         preds = q.argmax(-1)
-        # [batch_size, seq_len]
-        vote = times - p.unsqueeze(-1).expand(-1, -1, times).eq(preds).sum(-1)
-        # if the 'gold' label gets votes more than vote_rate, then we think this may be a mistake
-        mask = (vote/times).ge(vote_low_rate) & (vote/times).le(vote_up_rate)
-        return vote, mask
+        if p is not None:
+            # [batch_size, seq_len]
+            vote = times - p.unsqueeze(-1).expand(-1, -1, times).eq(preds).sum(-1)
+            # if the 'gold' label gets votes more than vote_rate, then we think this may be a mistake
+            mask = (vote/times).ge(vote_low_rate) & (vote/times).le(vote_up_rate)
+            return vote, mask
+        else:
+            # [batch_size, seq_len]
+            mode = torch.mode(preds, -1)[0]
+            uncer = 1 - (mode.unsqueeze(-1).expand(-1, -1, times).eq(preds).sum(-1)/times)
+            mask = uncer.ge(vote_low_rate)
+            return uncer, mask
+
 
 
     def var_metric(self, q, p=None, varhold=0.1):

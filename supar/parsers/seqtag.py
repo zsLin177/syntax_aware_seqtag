@@ -148,16 +148,31 @@ class SimpleSeqTagParser(Parser):
 
     def _train(self, loader):
         self.model.train()
+        if self.aux_model is not None:
+            self.aux_model.train()
 
         bar, metric = progress_bar(loader), SeqTagMetric(self.LABEL.vocab)
+        masked_word_num = 0
+        sum_word = 0
 
         for i, batch in enumerate(bar, 1):
             sentences_lst = [s.words for s in batch.sentences]
+            labels_lst = [s.labels for s in batch.sentences]
             words, *feats, labels = batch
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            sum_word += mask.sum().item()
+            loss_mask = mask.clone()
+            if self.aux_model is not None:
+                q = self.aux_model.multi_forward(words, sentences_lst, feats[:], times=10, if_T=False)
+                skl, if_false_mask = self.aux_model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
+                constrain_mask = self.constrain(sentences_lst, labels_lst, if_false_mask)
+                if_false_mask = if_false_mask & constrain_mask
+                masked_word_num += if_false_mask.sum().item()
+                loss_mask = loss_mask & (~if_false_mask)
+
             score, self_uncer = self.model(words, sentences_lst, feats)
-            loss = self.model.loss(score, labels, mask, self_uncer)
+            loss = self.model.loss(score, labels, loss_mask, self_uncer)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -173,7 +188,23 @@ class SimpleSeqTagParser(Parser):
                 f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
             )
         logger.info(f"{bar.postfix}")
+        masked_ratio = masked_word_num / sum_word
+        logger.info(f"masked_word_num: {masked_word_num}, sum words: {sum_word}, ratio: {masked_ratio:6.2%}")
 
+
+    def constrain(self, sentences_lst, labels_lst, if_false_mask):
+        min_freq = 3
+        ignore_label_set = {'NR'}
+        mask = torch.zeros_like(if_false_mask).bool()
+        for i in range(len(sentences_lst)):
+            word_lst = sentences_lst[i]
+            label_lst = labels_lst[i]
+            for j in range(len(word_lst)):
+                if self.WORD.counter[word_lst[j]] >= min_freq:
+                    mask[i, j+1] = True
+                elif label_lst[j] not in ignore_label_set:
+                    mask[i, j+1] = True
+        return mask
 
     @torch.no_grad()
     def _evaluate(self, loader):
@@ -221,15 +252,16 @@ class SimpleSeqTagParser(Parser):
     @torch.no_grad()
     def _filter(self, loader, out_file='filter.jsonlines'):
         # dropout open
-        # self.model.train()
-        self.model.eval()
+        self.model.train()
+        # self.model.eval()
         
         sum_word = .0
         sum_picked_word = .0
         picked_data = []
 
+        bar = progress_bar(loader)
         total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
-        for batch in loader:
+        for batch in bar:
             sentences_lst = [s.words for s in batch.sentences]
             label_str_lst = [s.labels for s in batch.sentences]
             words, *feats, labels = batch
@@ -251,13 +283,15 @@ class SimpleSeqTagParser(Parser):
 
             # use mean metric
             # with "gold"
-            # skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
+            skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.25)
             # without "gold"
             # skl, if_false_mask = self.model.avg_metric(q, threshold=0.65)
 
             # use vote metric
             # use "gold"
-            skl, if_false_mask = self.model.vote_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), vote_low_rate=0.3, vote_up_rate=0.5)
+            # skl, if_false_mask = self.model.vote_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), vote_low_rate=0.3, vote_up_rate=0.5)
+            # without "gold"
+            # skl, if_false_mask = self.model.vote_metric(q, vote_low_rate=0.3)
 
             # use self uncer
             # skl, if_false_mask = self.model.su_metric(self_uncer, threshold=0.71)
@@ -325,70 +359,83 @@ class SimpleSeqTagParser(Parser):
             parser.model.load_pretrained(parser.WORD.embed).to(args.device)
             return parser
 
+        if args.aux:
+            aux_parser = cls.load(args.aux_path)
+
         logger.info("Building the fields")
         
-        TAG, CHAR, LEMMA, BERT = None, None, None, None
-        if args.encoder == 'bert':
-            from transformers import (AutoTokenizer, GPT2Tokenizer,
-                                      GPT2TokenizerFast)
-            t = AutoTokenizer.from_pretrained(args.bert)
-            WORD = SubwordField(
-                'words',
-                pad=t.pad_token,
-                unk=t.unk_token,
-                bos=t.bos_token or t.cls_token,
-                tokenize=t.tokenize,
-                fn=None if not isinstance(t,
-                                          (GPT2Tokenizer, GPT2TokenizerFast))
-                else lambda x: ' ' + x)
-            WORD.vocab = t.get_vocab()
+        if args.aux:
+            TAG, CHAR, LEMMA, BERT = None, None, None, None
+            WORD, CHAR, BERT = aux_parser.transform.FORM
+            LEMMA = aux_parser.transform.LEMMA
+            LABEL = aux_parser.transform.POS
+            transform = CoNLL(FORM=(WORD, CHAR, BERT),
+                          LEMMA=LEMMA,
+                          POS=LABEL)
         else:
-            WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
-            if 'tag' in args.feat:
-                TAG = Field('tags', bos=bos)
-            if 'char' in args.feat:
-                CHAR = SubwordField('chars',
-                                    pad=pad,
-                                    unk=unk,
-                                    bos=bos,
-                                    fix_len=args.fix_len)
-            if 'lemma' in args.feat:
-                LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
-            if 'bert' in args.feat:
+            TAG, CHAR, LEMMA, BERT = None, None, None, None
+            if args.encoder == 'bert':
                 from transformers import (AutoTokenizer, GPT2Tokenizer,
-                                          GPT2TokenizerFast)
+                                        GPT2TokenizerFast)
                 t = AutoTokenizer.from_pretrained(args.bert)
-                BERT = SubwordField(
-                    'bert',
+                WORD = SubwordField(
+                    'words',
                     pad=t.pad_token,
                     unk=t.unk_token,
                     bos=t.bos_token or t.cls_token,
-                    fix_len=args.fix_len,
                     tokenize=t.tokenize,
-                    fn=None
-                    if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast))
+                    fn=None if not isinstance(t,
+                                            (GPT2Tokenizer, GPT2TokenizerFast))
                     else lambda x: ' ' + x)
-                BERT.vocab = t.get_vocab()
-        # LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        # word:[bos, seq, eos] spans:[bos, seq, eos]
-        LABEL = Field('labels')
-        transform = CoNLL(FORM=(WORD, CHAR, BERT),
-                          LEMMA=LEMMA,
-                          POS=LABEL)
+                WORD.vocab = t.get_vocab()
+            else:
+                WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
+                if 'tag' in args.feat:
+                    TAG = Field('tags', bos=bos)
+                if 'char' in args.feat:
+                    CHAR = SubwordField('chars',
+                                        pad=pad,
+                                        unk=unk,
+                                        bos=bos,
+                                        fix_len=args.fix_len)
+                if 'lemma' in args.feat:
+                    LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
+                if 'bert' in args.feat:
+                    from transformers import (AutoTokenizer, GPT2Tokenizer,
+                                            GPT2TokenizerFast)
+                    t = AutoTokenizer.from_pretrained(args.bert)
+                    BERT = SubwordField(
+                        'bert',
+                        pad=t.pad_token,
+                        unk=t.unk_token,
+                        bos=t.bos_token or t.cls_token,
+                        fix_len=args.fix_len,
+                        tokenize=t.tokenize,
+                        fn=None
+                        if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast))
+                        else lambda x: ' ' + x)
+                    BERT.vocab = t.get_vocab()
+            # LABEL = ChartField('labels', fn=CoNLL.get_labels)
+            # word:[bos, seq, eos] spans:[bos, seq, eos]
+            LABEL = Field('labels')
+            transform = CoNLL(FORM=(WORD, CHAR, BERT),
+                            LEMMA=LEMMA,
+                            POS=LABEL)
 
-        train = Dataset(transform, args.train)
-        if args.encoder != 'bert':
-            WORD.build(
-                train, args.min_freq,
-                (Embedding.load(args.embed, args.unk) if args.embed else None))
-            if TAG is not None:
-                TAG.build(train)
-            if CHAR is not None:
-                CHAR.build(train)
-            if LEMMA is not None:
-                LEMMA.build(train)
-        # LABEL.build(train)
-        LABEL.build(train)
+            train = Dataset(transform, args.train)
+            if args.encoder != 'bert':
+                WORD.build(
+                    train, args.min_freq,
+                    (Embedding.load(args.embed, args.unk) if args.embed else None))
+                if TAG is not None:
+                    TAG.build(train)
+                if CHAR is not None:
+                    CHAR.build(train)
+                if LEMMA is not None:
+                    LEMMA.build(train)
+            # LABEL.build(train)
+            LABEL.build(train)
+        
         args.update({
             'n_words':
             len(WORD.vocab) if args.encoder == 'bert' else WORD.vocab.n_init,
@@ -449,7 +496,13 @@ class SimpleSeqTagParser(Parser):
             WORD.embed if hasattr(WORD, 'embed') else None).to(args.device)
         logger.info(f"{model}\n")
 
-        return cls(args, model, transform)
+        aux_model = None
+        if args.aux:
+            logger.info("Show the auxiliary model")
+            aux_model = aux_parser.model
+            logger.info(f"{aux_model}\n")
+
+        return cls(args, model, transform, aux_model)
 
 
 class CrfSeqTagParser(Parser):
