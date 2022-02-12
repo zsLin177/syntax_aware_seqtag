@@ -56,7 +56,7 @@ class SimpleSeqTagModel(Model):
                  pad_index=0,
                  unk_index=1,
                  self_uncertain=False,
-                 sample_t=50,
+                 policy_grad=False,
                  **kwargs):
         super().__init__(**Config().update(locals()))
         self.n_labels = n_labels
@@ -65,12 +65,13 @@ class SimpleSeqTagModel(Model):
         self.n_synatax = n_syntax
         self.mix = mix
         self.self_uncertain = self_uncertain
-        self.sample_t = sample_t
+        self.policy_grad = policy_grad
         
         self.repr_mlp = MLP(n_in=self.args.n_hidden, n_out=n_mlp, dropout=repr_mlp_dropout)
         self.scorer = MLP(n_in=n_mlp, n_out=n_labels, activation=False)
         if not self_uncertain:
             self.ce_criterion = nn.CrossEntropyLoss()
+            self.pg_ce_criterion = nn.CrossEntropyLoss(reduction='none')
         else:
             self.uncer_mlp = nn.Sequential(MLP(n_in=self.args.n_hidden, n_out=self.args.n_hidden//2, dropout=repr_mlp_dropout),
                                             MLP(n_in=self.args.n_hidden//2, n_out=n_mlp, dropout=repr_mlp_dropout))
@@ -93,25 +94,41 @@ class SimpleSeqTagModel(Model):
         ssu_mask = ssu.gt(threshold)
         return ssu, ssu_mask
 
-    @torch.no_grad()
-    def multi_forward(self, words, sens_lst=None, feats=None, times=3, if_T=True):
+    def multi_forward(self, words, sens_lst=None, feats=None, times=3, if_T=False, req_grad=False):
         '''
         To produce the set of predicted distributions Q={q1, q2, q3, ...}
         '''
-        q_set = []
-        score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
-        for i in range(times):
-            tmp_feats = feats[:]
-            # [batch_size, seq_len, n_hidden]
-            x = self.encode(words, tmp_feats)
-            # [batch_size, seq_len, n_labels]
-            score = self.scorer(self.repr_mlp(x))
-            if if_T:
-                score /= score_T
-            q_set.append(score.softmax(-1))
-        # [batch_size, seq_len, times, n_labels]
-        q = torch.stack(q_set).permute(1, 2, 0, 3)
-        return q
+        if not req_grad:
+            with torch.no_grad():
+                q_set = []
+                score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
+                for i in range(times):
+                    tmp_feats = feats[:]
+                    # [batch_size, seq_len, n_hidden]
+                    x = self.encode(words, tmp_feats)
+                    # [batch_size, seq_len, n_labels]
+                    score = self.scorer(self.repr_mlp(x))
+                    if if_T:
+                        score /= score_T
+                    q_set.append(score.softmax(-1))
+                # [batch_size, seq_len, times, n_labels]
+                q = torch.stack(q_set).permute(1, 2, 0, 3)
+                return q
+        else:
+            q_set = []
+            score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
+            for i in range(times):
+                tmp_feats = feats[:]
+                # [batch_size, seq_len, n_hidden]
+                x = self.encode(words, tmp_feats)
+                # [batch_size, seq_len, n_labels]
+                score = self.scorer(self.repr_mlp(x))
+                if if_T:
+                    score /= score_T
+                q_set.append(score.softmax(-1))
+            # [batch_size, seq_len, times, n_labels]
+            q = torch.stack(q_set).permute(1, 2, 0, 3)
+            return q
 
     def skl_div(self, q, p=None):
         '''
@@ -144,15 +161,23 @@ class SimpleSeqTagModel(Model):
             kl = neg_avg_e.unsqueeze(-1) + cross_e
             return self.sig_scale(kl)
 
-    def avg_metric(self, q, p=None, threshold=0.5):
+    def avg_metric(self, q, p=None, threshold=0.5, req_grad=False):
         '''
         return : [batch_size, seq_len]
         '''
-        skl = self.skl_div(q, p)
-        # skl:[batch_size, seq_len, times]
-        res = skl.mean(-1)
-        res_mask = res.gt(threshold)
-        return res, res_mask
+        if not req_grad:
+            with torch.no_grad():
+                skl = self.skl_div(q, p)
+                # skl:[batch_size, seq_len, times]
+                res = skl.mean(-1)
+                res_mask = res.gt(threshold)
+                return res, res_mask
+        else:
+            skl = self.skl_div(q, p)
+            # skl:[batch_size, seq_len, times]
+            res = skl.mean(-1)
+            res_mask = res.gt(threshold)
+            return res, res_mask
     
     def vote_metric(self, q, p=None, vote_low_rate=0.3, vote_up_rate=0.9):
         '''
@@ -206,30 +231,24 @@ class SimpleSeqTagModel(Model):
             return f_score.argmax(-1)
 
 
-    def loss(self, score, gold_labels, mask, uncer=None):
+    def loss(self, score, gold_labels, mask, reward=None):
         """
-        TODO:introduce
+        TODO:
+        uncer: [batch_size, seq_len]
         """
-        if not self.self_uncertain:
+        if not self.policy_grad:
             return self.ce_criterion(score[mask], gold_labels[mask[:, 1:]])
         else:
-            # [k, n_labels], [k]
-            score, uncer = score[mask], uncer[mask]
-            k, n_labels = score.shape[0], score.shape[1]
-            # [k, t, n_labels]
-            sample = torch.empty((k, self.sample_t, n_labels), device=score.device).normal_(mean=0, std=1)
-            sample = uncer.unsqueeze(-1).expand(-1, self.sample_t).unsqueeze(-1) * sample
-            t_f_score = score.unsqueeze(1).expand(-1, self.sample_t, -1) + sample
-            # [t, k ,n_labels]
-            t_f_score = t_f_score.permute(1, 0, 2)
-            # [t, k]
-            t_gold_score = torch.gather(t_f_score, 2, gold_labels[mask[:, 1:]].unsqueeze(0).expand(self.sample_t, -1).unsqueeze(-1)).squeeze(-1)
-            # [t, k]
-            t_logsumexp = torch.logsumexp(t_f_score, 2)
-            t_p = (t_gold_score - t_logsumexp).exp()
-            # [k]
-            neg_log_avg_p = -t_p.mean(0).log()
-            return neg_log_avg_p.mean()
+            if reward is not None:
+                # [k]
+                each_loss = self.pg_ce_criterion(score[mask], gold_labels[mask[:, 1:]])
+                loss = (reward[mask] * each_loss).mean()
+                return loss
+            else:
+                '''
+                need policy gradient but without aux model and epoch <= start epoch
+                '''
+                return self.ce_criterion(score[mask], gold_labels[mask[:, 1:]])
 
 
 class CrfSeqTagModel(Model):

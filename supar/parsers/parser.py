@@ -276,7 +276,7 @@ class Parser(object):
             start = datetime.now()
 
             logger.info(f"Epoch {epoch} / {args.epochs}:")
-            self._train(train.loader)
+            self._train(train.loader, epoch)
             dev_metric = self._evaluate(dev.loader)
             logger.info(f"- {dev_metric}")
             test_metric = self._evaluate(test.loader)

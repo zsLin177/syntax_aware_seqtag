@@ -28,7 +28,10 @@ def main():
     subparser.add_argument('--self_uncer', action='store_true', help='whether to use self uncer')
     subparser.add_argument('--aux', action='store_true', help='whether to have the aux model')
     subparser.add_argument('--aux_path', default='exp/counter-ctb7-transformer-simple-pos/model', help='path to aux model')
-    
+    subparser.add_argument('--policy_grad', action='store_true', help='whether to train with policy_grad')
+    subparser.add_argument('--times', default=3, type=int, help='sample times during training')
+    subparser.add_argument('--pg_start_epoch', default=20, type=int, help='without aux model, then after this epochs to use the reward computed by self and need grad')
+
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')

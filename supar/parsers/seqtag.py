@@ -146,7 +146,7 @@ class SimpleSeqTagParser(Parser):
 
         return super().filter(**Config().update(locals()))
 
-    def _train(self, loader):
+    def _train(self, loader, epoch=None):
         self.model.train()
         if self.aux_model is not None:
             self.aux_model.train()
@@ -162,17 +162,21 @@ class SimpleSeqTagParser(Parser):
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             sum_word += mask.sum().item()
-            loss_mask = mask.clone()
-            if self.aux_model is not None:
-                q = self.aux_model.multi_forward(words, sentences_lst, feats[:], times=10, if_T=False)
-                skl, if_false_mask = self.aux_model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
-                constrain_mask = self.constrain(sentences_lst, labels_lst, if_false_mask)
-                if_false_mask = if_false_mask & constrain_mask
-                masked_word_num += if_false_mask.sum().item()
-                loss_mask = loss_mask & (~if_false_mask)
-
-            score, self_uncer = self.model(words, sentences_lst, feats)
-            loss = self.model.loss(score, labels, loss_mask, self_uncer)
+            if self.args.policy_grad:
+                score, self_uncer = self.model(words, sentences_lst, feats[:])
+                if self.aux_model is not None:
+                    q = self.aux_model.multi_forward(words, sentences_lst, feats, times=self.args.times, if_T=False, req_grad=False)
+                    skl, if_false_mask = self.aux_model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3)
+                    loss = self.model.loss(score, labels, mask, 1-skl)
+                elif epoch <= self.args.pg_start_epoch:
+                    loss = self.model.loss(score, labels, mask)
+                else:
+                    q = self.model.multi_forward(words, sentences_lst, feats, times=self.args.times, if_T=False, req_grad=False)
+                    skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3, req_grad=False)
+                    loss = self.model.loss(score, labels, mask, 1-skl)
+            else:
+                score, self_uncer = self.model(words, sentences_lst, feats)
+                loss = self.model.loss(score, labels, mask)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -188,8 +192,6 @@ class SimpleSeqTagParser(Parser):
                 f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
             )
         logger.info(f"{bar.postfix}")
-        masked_ratio = masked_word_num / sum_word
-        logger.info(f"masked_word_num: {masked_word_num}, sum words: {sum_word}, ratio: {masked_ratio:6.2%}")
 
 
     def constrain(self, sentences_lst, labels_lst, if_false_mask):
@@ -458,7 +460,8 @@ class SimpleSeqTagParser(Parser):
             'unk_index':
             WORD.unk_index,
             'interpolation': args.itp,
-            'self_uncertain': args.self_uncer
+            'self_uncertain': args.self_uncer,
+            'policy_grad': args.policy_grad
         })
 
         if(args.encoder == 'bert'):
