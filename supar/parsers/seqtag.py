@@ -7,17 +7,254 @@ from re import X
 
 import torch
 import torch.nn as nn
-from supar.models import (SimpleSeqTagModel, CrfSeqTagModel)
+from supar.models import (SimpleSeqTagModel, CrfSeqTagModel, HmmModel)
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk, eos
 from supar.utils.field import Field, SubwordField
 from supar.utils.logging import get_logger, progress_bar
+from supar.utils.logging import init_logger, logger
 from supar.utils.metric import SeqTagMetric
 from supar.utils.transform import CoNLL
+from datetime import datetime
 
 logger = get_logger(__name__)
 
+
+class HmmSeqTagParser(Parser):
+    r"""
+    TODO:introduction
+    """
+    NAME = 'HmmSeqTag'
+    MODEL = HmmModel
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.WORD, self.CHAR, self.BERT = self.transform.FORM
+        self.LEMMA = self.transform.LEMMA
+        self.LABEL = self.transform.POS
+
+    def train(self,
+              train,
+              dev,
+              test,
+              buckets=32,
+              batch_size=5000,
+              update_steps=1,
+              verbose=True,
+              **kwargs):
+        r"""
+        Args:
+            train/dev/test (list[list] or str):
+                Filenames of the train/dev/test datasets.
+            buckets (int):
+                The number of buckets that sentences are assigned to. Default: 32.
+            batch_size (int):
+                The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
+            verbose (bool):
+                If ``True``, increases the output verbosity. Default: ``True``.
+            kwargs (dict):
+                A dict holding the unconsumed arguments for updating training configurations.
+        """
+
+        args = self.args.update(locals())
+        init_logger(logger, verbose=args.verbose)
+
+        self.transform.train()
+        
+        logger.info("Loading the data")
+        train = Dataset(self.transform, args.train, **args)
+        dev = Dataset(self.transform, args.dev)
+        test = Dataset(self.transform, args.test)
+        train.build(args.batch_size//args.update_steps, args.buckets)
+        dev.build(args.batch_size, args.buckets)
+        test.build(args.batch_size, args.buckets)
+        logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n{'test:':6} {test}\n")
+
+        start = datetime.now()
+        self._train(train.loader)
+        dev_metric = self._evaluate(dev.loader)
+        logger.info(f"dev: {dev_metric}")
+        test_metric = self._evaluate(test.loader)
+        logger.info(f"test: {test_metric}")
+        t = datetime.now() - start
+        logger.info(f"{t}s elapsed \n")
+        self.save(args.path)
+        
+    def _train(self, loader):
+        self.model.train()
+
+        bar, metric = progress_bar(loader), SeqTagMetric(self.LABEL.vocab)
+
+        for i, batch in enumerate(bar, 1):
+            sentences_lst = [s.words for s in batch.sentences]
+            words, labels = batch
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            self.model(words, labels)
+        self.model.smooth_logp()
+
+    @torch.no_grad()
+    def _evaluate(self, loader):
+        self.model.eval()
+
+        total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
+
+        for batch in loader:
+            sentences_lst = [s.words for s in batch.sentences]
+            words, labels = batch
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            preds = self.model.decode(words)
+            metric(preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
+        # total_loss /= len(loader)
+
+        return metric
+
+    def evaluate(self,
+                 data,
+                 buckets=8,
+                 batch_size=5000,
+                 verbose=True,
+                 **kwargs):
+        r"""
+        Args:
+            data (str):
+                The data for evaluation, both list of instances and filename are allowed.
+            buckets (int):
+                The number of buckets that sentences are assigned to. Default: 32.
+            batch_size (int):
+                The number of tokens in each batch. Default: 5000.
+            verbose (bool):
+                If ``True``, increases the output verbosity. Default: ``True``.
+            kwargs (dict):
+                A dict holding the unconsumed arguments that can be used to update the configurations for evaluation.
+
+        Returns:
+            The loss scalar and evaluation results.
+        """
+
+        return super().evaluate(**Config().update(locals()))
+
+    def predict(self,
+                data,
+                pred=None,
+                lang='en',
+                buckets=8,
+                batch_size=5000,
+                verbose=True,
+                **kwargs):
+        r"""
+        Args:
+            data (list[list] or str):
+                The data for prediction, both a list of instances and filename are allowed.
+            pred (str):
+                If specified, the predicted results will be saved to the file. Default: ``None``.
+            lang (str):
+                Language code (e.g., 'en') or language name (e.g., 'English') for the text to tokenize.
+                ``None`` if tokenization is not required.
+                Default: ``en``.
+            buckets (int):
+                The number of buckets that sentences are assigned to. Default: 32.
+            batch_size (int):
+                The number of tokens in each batch. Default: 5000.
+            prob (bool):
+                If ``True``, outputs the probabilities. Default: ``False``.
+            verbose (bool):
+                If ``True``, increases the output verbosity. Default: ``True``.
+            kwargs (dict):
+                A dict holding the unconsumed arguments that can be used to update the configurations for prediction.
+
+        Returns:
+            A :class:`~supar.utils.Dataset` object that stores the predicted results.
+        """
+
+        return super().predict(**Config().update(locals()))
+
+    @torch.no_grad()
+    def _predict(self, loader):
+        self.model.eval()
+
+        total_loss, metric = 0, SeqTagMetric(self.LABEL.vocab)
+        preds = {'labels': [], 'probs': [] if self.args.prob else None}
+        # for words, *feats, labels in loader:
+        for batch in loader:
+            # pdb.set_trace()
+            sentences_lst = [s.words for s in batch.sentences]
+            words, labels = batch
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            output = self.model.decode(words)
+            metric(output.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
+            lens = mask.sum(-1).tolist()
+            preds['labels'].extend(out[0:i].tolist() for i, out in zip(lens, output))
+        preds['labels'] = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None] for i in out]) for out in preds['labels']]
+        # total_loss /= len(loader)
+        print(metric)
+        return preds
+
+    @classmethod
+    def build(cls, path, min_freq=3, fix_len=20, **kwargs):
+        r"""
+        Build a brand-new Parser, including initialization of all data fields and model parameters.
+
+        Args:
+            path (str):
+                The path of the model to be saved.
+            min_freq (str):
+                The minimum frequency needed to include a token in the vocabulary. Default:7.
+            fix_len (int):
+                The max length of all subword pieces. The excess part of each piece will be truncated.
+                Required if using CharLSTM/BERT.
+                Default: 20.
+            kwargs (dict):
+                A dict holding the unconsumed arguments.
+        """
+
+        args = Config(**locals())
+        args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.exists(path) and not args.build:
+            parser = cls.load(**args)
+            parser.model = cls.MODEL(**parser.args)
+            parser.model.load_pretrained(parser.WORD.embed).to(args.device)
+            return parser
+
+        logger.info("Building the fields")
+        
+        TAG, CHAR, LEMMA, BERT = None, None, None, None
+        WORD = Field('words', pad=pad, unk=unk, lower=True)
+        LABEL = Field('labels')
+        transform = CoNLL(FORM=(WORD, CHAR, BERT),
+                          LEMMA=LEMMA,
+                          POS=LABEL)
+
+        train = Dataset(transform, args.train)
+
+        WORD.build(
+            train, args.min_freq)
+        LABEL.build(train)
+        args.update({
+            'n_words':
+            WORD.vocab.n_init,
+            'n_labels':
+            len(LABEL.vocab),
+            'pad_index':
+            WORD.pad_index,
+            'unk_index':
+            WORD.unk_index,
+        })
+
+        logger.info(f"{transform}")
+
+        logger.info("Building the model")
+        model = cls.MODEL(**args).to(args.device)
+        logger.info(f"{model}\n")
+
+        return cls(args, model, transform)
 
 class SimpleSeqTagParser(Parser):
     r"""

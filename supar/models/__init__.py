@@ -6,7 +6,7 @@ from .dep import (BiaffineDependencyModel, CRF2oDependencyModel,
 from .model import Model
 from .sdp import BiaffineSemanticDependencyModel, VISemanticDependencyModel
 # from .srl import BiaffineSemanticRoleLabelingModel, VISemanticRoleLabelingModel, GLISemanticRoleLabelingModel
-from .seqtag import SimpleSeqTagModel, CrfSeqTagModel
+from .seqtag import SimpleSeqTagModel, CrfSeqTagModel, HmmModel
 
 __all__ = ['Model',
            'BiaffineDependencyModel',
@@ -18,4 +18,5 @@ __all__ = ['Model',
            'BiaffineSemanticDependencyModel',
            'VISemanticDependencyModel',
            'SimpleSeqTagModel',
-           'CrfSeqTagModel']
+           'CrfSeqTagModel',
+           'HmmModel']

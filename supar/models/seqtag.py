@@ -15,6 +15,100 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 # from parser.JParser import JParser
 
+class HmmModel(nn.Module):
+    r"""
+    TODO: introduction
+    """
+    def __init__(self, n_words, n_labels, pad_index, unk_index, alpha=0.01, **kwargs):
+        super().__init__()
+        self.args = Config().update(locals())
+        self.n_words = n_words
+        self.n_labels = n_labels
+        self.unk_index = unk_index
+        self.pad_index = pad_index
+        self.alpha = alpha
+
+
+        self.trans_count = nn.Parameter(torch.zeros((n_labels+1, n_labels+1)), requires_grad=False)
+        self.emit_count = nn.Parameter(torch.zeros((n_words, n_labels)), requires_grad=False)
+        self.trans = nn.Parameter(torch.empty((n_labels, n_labels)), requires_grad=False)
+        self.strans = nn.Parameter(torch.empty((n_labels,)), requires_grad=False)
+        self.emit = nn.Parameter(torch.empty((n_words, n_labels)), requires_grad=False)
+
+    def forward(self, words, labels):
+        '''
+        just use during training, to count
+        words: [batch_size, seq_len]
+        labels: [batch_size, seq_len]
+        no bos and eos
+        '''
+        batch_size = words.shape[0]
+        # [batch_size]
+        lens = words.ne(self.pad_index).sum(-1)
+        ext_mask = words.ge(self.n_words)
+        ext_words = words.masked_fill(ext_mask, self.unk_index)
+        for i in range(batch_size):
+            pre = -1
+            for j in range(lens[i]):
+                w = ext_words[i, j]
+                t = labels[i, j]
+                self.trans_count[t, pre] += 1
+                self.emit_count[w, t] += 1
+                pre = t
+
+    
+    def smooth_logp(self):
+        '''
+        get the smoothed log probability
+        '''
+        alpha = self.alpha
+        sum_t_c = torch.sum(self.trans_count, 0)
+        smoothed_t_p = (self.trans_count + alpha) / (sum_t_c + alpha*self.trans_count.shape[0])
+        sum_e_c = torch.sum(self.emit_count, 0)
+        smoothed_e_p = (self.emit_count + alpha) / (sum_e_c + alpha*self.emit_count.shape[0])
+        # x->y : post<-pre
+        self.trans.data = torch.log(smoothed_t_p[:-1, :-1])
+        self.strans.data = torch.log(smoothed_t_p[:-1, -1])
+        self.emit.data = torch.log(smoothed_e_p)
+    
+    def decode(self, words):
+        '''
+        use viterbi decode
+        words: [batch_size, seq_len]
+        '''
+        batch_size, seq_len = words.shape
+        ext_mask = words.ge(self.n_words)
+        ext_words = words.masked_fill(ext_mask, self.unk_index)
+        # [batch_size, seq_len, n_labels]
+        emit = self.emit[ext_words.view(batch_size*seq_len)].reshape((batch_size, seq_len, self.n_labels))
+        # [seq_len, batch_size, n_labels]
+        emit = emit.transpose(0, 1)
+        n_tags = emit.shape[2]
+        # x->y: pre->post
+        trans = self.trans.transpose(0, 1)
+        delta = emit.new_zeros(seq_len, batch_size, n_tags)
+        paths = emit.new_zeros(seq_len, batch_size, n_tags, dtype=torch.long)
+        # [batch_size, n_tags]
+        delta[0] = self.strans + emit[0]
+
+        for i in range(1, seq_len):
+            scores = trans + delta[i - 1].unsqueeze(-1)
+            scores, paths[i] = scores.max(1)
+            delta[i] = scores + emit[i]
+
+        preds = []
+        lens = words.ne(self.pad_index).sum(-1)
+        for i, length in enumerate(lens.tolist()):
+            prev = torch.argmax(delta[length-1, i])
+            pred = [prev]
+            for j in reversed(range(1, length)):
+                prev = paths[j, i, prev]
+                pred.append(prev)
+            preds.append(paths.new_tensor(pred).flip(0))
+        
+        preds = pad_sequence(preds, True, -1)
+        return preds
+
 class SimpleSeqTagModel(Model):
     r"""
     TODO: introduction

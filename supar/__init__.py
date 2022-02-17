@@ -2,7 +2,7 @@
 
 from .parsers import (BiaffineDependencyParser, BiaffineSemanticDependencyParser, CRF2oDependencyParser, CRFConstituencyParser,
                       CRFDependencyParser, Parser, VIConstituencyParser, VIDependencyParser, VISemanticDependencyParser,
-                      SimpleSeqTagParser, CrfSeqTagParser)
+                      SimpleSeqTagParser, CrfSeqTagParser, HmmSeqTagParser)
 
 __all__ = ['BiaffineDependencyParser',
            'CRFDependencyParser',
@@ -14,7 +14,8 @@ __all__ = ['BiaffineDependencyParser',
            'VISemanticDependencyParser',
            'Parser',
            'SimpleSeqTagParser',
-           'CrfSeqTagParser']
+           'CrfSeqTagParser',
+           'HmmSeqTagParser']
 
 __version__ = '1.1.0'
 
@@ -27,7 +28,8 @@ PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              BiaffineSemanticDependencyParser,
                                              VISemanticDependencyParser,
                                              SimpleSeqTagParser,
-                                             CrfSeqTagParser]}
+                                             CrfSeqTagParser,
+                                             HmmSeqTagParser]}
 
 SRC = 'http://hlt.suda.edu.cn/LA/yzhang/supar'
 
