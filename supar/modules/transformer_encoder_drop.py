@@ -55,7 +55,7 @@ class SelfAttentionEncoder_Layerdrop(nn.Module):
         self.positional_encoding = PositionalEncoding(emb_size,
                                                       dropout=dropout)
 
-    def forward(self, src, pad_mask, if_layerdrop=False, p_layerdrop=0.5, if_selfattdrop=False, p_attdrop=0.5):
+    def forward(self, src, pad_mask, if_layerdrop=False, p_layerdrop=0.3, if_selfattdrop=False, p_attdrop=0.5):
         '''
         src: [batch_size, seq_len, dim]
         pad_mask: [batch_size, seq_len] for pad, true means need to be pad

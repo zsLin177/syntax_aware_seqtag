@@ -92,3 +92,7 @@ def parse(parser):
     elif args.mode == 'filter':
         parser = Parser.load(args.path)
         parser.filter(**args)
+    elif args.mode == 'analysis':
+        parser = Parser.load(args.path)
+        parser.analysis(**args)
+

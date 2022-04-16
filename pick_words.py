@@ -52,6 +52,7 @@ def process(input_file, complite_file, partical_file):
     write_data(ext_data, complite_file, partical_file)
 
 if __name__ == "__main__":
+    # pick top n 
     input_file = 'data-error/outpt-full.txt'
     cf = 'data-error/picked_full_data.txt'
     pf = 'data-error/picked_partical.txt'

@@ -54,7 +54,9 @@ class TeacherSeqTagModel(Model):
                  interpolation=0.1,
                  pad_index=0,
                  unk_index=1,
+                 self_uncertain=False,
                  split=True,
+                 sample_t = 50,
                  **kwargs):
         super().__init__(**Config().update(locals()))
         self.n_labels = n_labels
@@ -62,37 +64,67 @@ class TeacherSeqTagModel(Model):
         self.syntax = syntax
         self.n_synatax = n_syntax
         self.mix = mix
-        
+        self.self_uncertain = self_uncertain 
+        self.sample_t = sample_t  
         self.repr_mlp = MLP(n_in=self.args.n_hidden, n_out=n_mlp, dropout=repr_mlp_dropout)
         self.scorer = MLP(n_in=n_mlp, n_out=n_labels, activation=False)
-        self.ce_criterion = nn.CrossEntropyLoss()
+
+        if not self_uncertain:
+            self.ce_criterion = nn.CrossEntropyLoss()
+        else:
+            self.uncer_mlp = nn.Sequential(MLP(n_in=self.args.n_hidden, n_out=self.args.n_hidden//2, dropout=repr_mlp_dropout),
+                                            MLP(n_in=self.args.n_hidden//2, n_out=n_mlp, dropout=repr_mlp_dropout))
+            self.uncer_scorer = MLP(n_in=n_mlp, n_out=1, activation=False)        
+        # self.ce_criterion = nn.CrossEntropyLoss()
 
     def forward(self, words, sens_lst=None, feats=None, if_layerdrop=False, p_layerdrop=0.5, if_selfattdrop=False, p_attdrop=0.5):
         # [batch_size, seq_len, n_hidden]
         x = self.encode(words, feats, if_layerdrop, p_layerdrop, if_selfattdrop, p_attdrop)
         # [batch_size, seq_len, n_labels]
         score = self.scorer(self.repr_mlp(x))
-        return score
+        if not self.self_uncertain:
+            return score, None
+        else:
+            # [batch_size, seq_len]
+            uncer = self.uncer_scorer(self.uncer_mlp(x)).squeeze(-1)
+            return score, uncer
 
-
-    def multi_forward(self, words, sens_lst=None, feats=None, times=3, if_T=True, if_layerdrop=False, p_layerdrop=0.5, if_selfattdrop=False, p_attdrop=0.5):
+    def multi_forward(self, words, sens_lst=None, feats=None, times=3, if_T=True, if_layerdrop=False, p_layerdrop=0.5, if_selfattdrop=False, p_attdrop=0.5, req_grad=False):
         '''
         To produce the set of predicted distributions Q={q1, q2, q3, ...}
+
         '''
-        q_set = []
-        score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
-        for i in range(times):
-            tmp_feats = feats[:]
-            # [batch_size, seq_len, n_hidden]
-            x = self.encode(words, tmp_feats, if_layerdrop, p_layerdrop, if_selfattdrop, p_attdrop)
-            # [batch_size, seq_len, n_labels]
-            score = self.scorer(self.repr_mlp(x))
-            if if_T:
-                score /= score_T
-            q_set.append(score.softmax(-1))
-        # [batch_size, seq_len, times, n_labels]
-        q = torch.stack(q_set).permute(1, 2, 0, 3)
-        return q
+        if not req_grad:
+            with torch.no_grad():
+                q_set = []
+                score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
+                for i in range(times):
+                    tmp_feats = feats[:]
+                    # [batch_size, seq_len, n_hidden]
+                    x = self.encode(words, tmp_feats, if_layerdrop, p_layerdrop, if_selfattdrop, p_attdrop)
+                    # [batch_size, seq_len, n_labels]
+                    score = self.scorer(self.repr_mlp(x))
+                    if if_T:
+                        score /= score_T
+                    q_set.append(score.softmax(-1))
+                # [batch_size, seq_len, times, n_labels]
+                q = torch.stack(q_set).permute(1, 2, 0, 3)
+                return q
+        else:
+            q_set = []
+            score_T = words.new_tensor([self.n_mlp], dtype=torch.float).sqrt()
+            for i in range(times):
+                tmp_feats = feats[:]
+                # [batch_size, seq_len, n_hidden]
+                x = self.encode(words, tmp_feats, if_layerdrop, p_layerdrop, if_selfattdrop, p_attdrop)
+                # [batch_size, seq_len, n_labels]
+                score = self.scorer(self.repr_mlp(x))
+                if if_T:
+                    score /= score_T
+                q_set.append(score.softmax(-1))
+            # [batch_size, seq_len, times, n_labels]
+            q = torch.stack(q_set).permute(1, 2, 0, 3)
+            return q
 
     def skl_div(self, q, p=None):
         '''
@@ -132,6 +164,7 @@ class TeacherSeqTagModel(Model):
         '''
         return : [batch_size, seq_len]
         '''
+        print("阈值：",threshold)
         skl = self.skl_div(q, p)
         if p != None:
             # skl:[batch_size, seq_len, times]
@@ -145,20 +178,33 @@ class TeacherSeqTagModel(Model):
             res_mask = res.gt(threshold)
             return res, res_mask
     
-    def vote_metric(self, q, p=None, threshold=0.5, vote_rate=0.5):
-        skl = self.skl_div(q, p)
-        times = skl.shape[-1]
-        bound_num = math.floor(times * vote_rate)
-        if p != None:
-            # skl:[batch_size, seq_len, times]
-            return skl.gt(threshold).sum(-1).ge(bound_num)
+    def vote_metric(self, q, p=None, vote_low_rate=0.3, vote_up_rate=0.9):
+        '''
+        q: predicted distributions
+            [batch_size, seq_len, times, n_labels]
+        p: the "gold" label
+            [batch_size, seq_len]
+        '''
+        print("阈值范围：",vote_low_rate, vote_up_rate)
+        times = q.shape[2]
+        preds = q.argmax(-1)
+        if p is not None:
+            # [batch_size, seq_len] get the vote number of 
+            vote = times - p.unsqueeze(-1).expand(-1, -1, times).eq(preds).sum(-1)
+            # if the 'gold' label gets votes more than vote_rate, then we think this may be a mistake
+            mask = (vote/times).ge(vote_low_rate) & (vote/times).le(vote_up_rate)
+            return vote, mask
         else:
-            # skl:[batch_size, seq_len, times, times]
-            mask = skl.new_ones(skl.shape[-1], skl.shape[-1]).bool().triu(1)
-            return skl.permute(2, 3, 0, 1)[mask].gt(threshold).sum(0).ge(bound_num)
+            # [batch_size, seq_len]
+            mode = torch.mode(preds, -1)[0] #get mode value
+            uncer = 1 - (mode.unsqueeze(-1).expand(-1, -1, times).eq(preds).sum(-1)/times)
+            mask = uncer.ge(vote_low_rate)
+            return uncer, mask
+
 
     def var_metric(self, q, p=None, varhold=0.1):
         skl = self.skl_div(q, p)
+        print("阈值：",varhold)
         if p != None:
             # skl:[batch_size, seq_len, times]
             res = skl.std(-1)
@@ -180,17 +226,52 @@ class TeacherSeqTagModel(Model):
         '''
         return 2*(kl.sigmoid()-0.5)   
 
-    def decode(self, score):
+    # def decode(self, score):
+    #     """
+    #     TODO:introduce
+    #     """
+    #     return score.argmax(-1)
+    def decode(self, score, uncer=None):
         """
         TODO:introduce
         """
-        return score.argmax(-1)
+        if not self.self_uncertain:
+            return score.argmax(-1)
+        else:
+            # [batch_size, seq_len, n_labels]
+            sample = torch.empty_like(score).normal_(mean=0, std=1)
+            f_score = score + uncer.unsqueeze(-1) * sample
+            return f_score.argmax(-1)
 
-    def loss(self, score, gold_labels, mask):
+    # def loss(self, score, gold_labels, mask):
+    #     """
+    #     TODO:introduce
+    #     """
+    #     return self.ce_criterion(score[mask], gold_labels[mask[:, 1:]])
+    def loss(self, score, gold_labels, mask, uncer=None):
         """
         TODO:introduce
         """
-        return self.ce_criterion(score[mask], gold_labels[mask[:, 1:]])
+        if not self.self_uncertain:
+            return self.ce_criterion(score[mask], gold_labels[mask[:, 1:]])
+        else:
+            # [k, n_labels], [k]
+            score, uncer = score[mask], uncer[mask]
+            k, n_labels = score.shape[0], score.shape[1]
+            # [k, t, n_labels]
+            sample = torch.empty((k, self.sample_t, n_labels), device=score.device).normal_(mean=0, std=1)
+            sample = uncer.unsqueeze(-1).expand(-1, self.sample_t).unsqueeze(-1) * sample
+            t_f_score = score.unsqueeze(1).expand(-1, self.sample_t, -1) + sample
+            # [t, k ,n_labels]
+            t_f_score = t_f_score.permute(1, 0, 2)
+            # [t, k]
+            t_gold_score = torch.gather(t_f_score, 2, gold_labels[mask[:, 1:]].unsqueeze(0).expand(self.sample_t, -1).unsqueeze(-1)).squeeze(-1)
+            # [t, k]
+            t_logsumexp = torch.logsumexp(t_f_score, 2)
+            t_p = (t_gold_score - t_logsumexp).exp()
+            # [k]
+            neg_log_avg_p = -t_p.mean(0).log()
+            return neg_log_avg_p.mean()
 
  
 class CrfTeacherSeqTagModel(Model):
