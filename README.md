@@ -34,6 +34,18 @@ python -m supar.cmds.crf_seqtag train -b \
         -p exp/transformer-crf-pos/model \
         -d 4
 ```
+* with bert
+```shell
+python -m supar.cmds.crf_seqtag train -b \
+        --train data/ctb/ctb7/train.conll \
+        --dev data/ctb/ctb7/dev.conll \
+        --test data/ctb/ctb7/test.conll \
+        --batch-size 3000 \
+        --encoder bert \
+        --bert ./bert-base-chinese \
+        -p exp/debug/model \
+        -d 4 
+```
 
 ## Evaluate
 ```shell
