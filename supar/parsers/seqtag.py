@@ -408,7 +408,7 @@ class SimpleSeqTagParser(Parser):
                 elif epoch <= self.args.pg_start_epoch:
                     loss = self.model.loss(score, labels, mask)
                 else:
-                    q = self.model.multi_forward(words, sentences_lst, feats, times=self.args.times, if_T=False, req_grad=False)
+                    q = self.model.multi_forward(words, sentences_lst, feats, times=self.args.times, if_T=False, req_grad=True)
                     skl, if_false_mask = self.model.avg_metric(q, p=torch.cat((torch.zeros_like(labels[:,0]).unsqueeze(-1), labels), -1), threshold=0.3, req_grad=False)
                     loss = self.model.loss(score, labels, mask, 1-skl)
             else:
@@ -846,7 +846,7 @@ class CrfSeqTagParser(Parser):
 
         return super().predict(**Config().update(locals()))
 
-    def _train(self, loader):
+    def _train(self, loader, epoch):
         self.model.train()
 
         bar, metric = progress_bar(loader), SeqTagMetric(self.LABEL.vocab)
